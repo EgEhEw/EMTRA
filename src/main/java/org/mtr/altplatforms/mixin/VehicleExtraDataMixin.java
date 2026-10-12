@@ -5,7 +5,6 @@ import org.mtr.core.data.PathData;
 import org.mtr.core.data.VehicleExtraData;
 import org.mtr.core.generated.data.VehicleExtraDataSchema;
 import org.mtr.core.serializer.ReaderBase;
-import org.mtr.core.serializer.WriterBase;
 import org.mtr.libraries.it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import org.mtr.libraries.it.unimi.dsi.fastutil.objects.ObjectImmutableList;
 import org.spongepowered.asm.mixin.Mixin;
@@ -14,7 +13,6 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(value = VehicleExtraData.class, remap = false)
@@ -88,24 +86,6 @@ public abstract class VehicleExtraDataMixin extends VehicleExtraDataSchema imple
 		if (altplatforms$pathChanged) {
 			altplatforms$pathChanged = false;
 			cir.setReturnValue(true);
-		}
-	}
-
-	@Inject(method = "updateData", at = @At("TAIL"))
-	private void altplatforms$onUpdateData(ReaderBase readerBase, CallbackInfo ci) {
-		immutablePath = new ObjectImmutableList<>(path);
-	}
-
-	@Inject(method = "serializeData", at = @At("TAIL"))
-	private void altplatforms$onSerializeData(WriterBase writerBase, CallbackInfo ci) {
-		if (altplatforms$dynamicRepeatIndex1 >= 0) {
-			writerBase.writeLong("repeatIndex1", altplatforms$dynamicRepeatIndex1);
-		}
-		if (altplatforms$dynamicRepeatIndex2 >= 0) {
-			writerBase.writeLong("repeatIndex2", altplatforms$dynamicRepeatIndex2);
-		}
-		if (altplatforms$dynamicTotalDistance >= 0) {
-			writerBase.writeDouble("totalDistance", altplatforms$dynamicTotalDistance);
 		}
 	}
 }

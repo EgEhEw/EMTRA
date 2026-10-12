@@ -1,6 +1,7 @@
 package org.mtr.altplatforms.mixin;
 
 import org.mtr.altplatforms.data.AlternatePath;
+import org.mtr.altplatforms.data.PlatformStop;
 import org.mtr.altplatforms.duck.IAltRoutePlatformData;
 import org.mtr.altplatforms.duck.IDepotAlternatePaths;
 import org.mtr.core.Main;
@@ -8,7 +9,6 @@ import org.mtr.core.data.*;
 import org.mtr.core.generated.data.DepotSchema;
 import org.mtr.core.path.SidingPathFinder;
 import org.mtr.core.serializer.ReaderBase;
-import org.mtr.core.serializer.WriterBase;
 import org.mtr.core.tool.Utilities;
 import org.mtr.libraries.it.unimi.dsi.fastutil.longs.LongAVLTreeSet;
 import org.mtr.libraries.it.unimi.dsi.fastutil.longs.LongArrayList;
@@ -22,7 +22,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(value = Depot.class, remap = false)
-public abstract class DepotMixin extends DepotSchema implements IDepotAlternatePaths {
+public abstract class DepotMixin extends DepotSchema {
 
 	protected DepotMixin(TransportMode transportMode, Data data) {
 		super(transportMode, data);
@@ -39,25 +39,6 @@ public abstract class DepotMixin extends DepotSchema implements IDepotAlternateP
 	@Final
 	private LongAVLTreeSet generatingSidingIds;
 
-	@Unique
-	private final ObjectArrayList<AlternatePath> altplatforms$alternatePaths = new ObjectArrayList<>();
-
-	@Override
-	public ObjectArrayList<AlternatePath> altplatforms$getAlternatePaths() {
-		return altplatforms$alternatePaths;
-	}
-
-	@Override
-	public ObjectArrayList<AlternatePath> altplatforms$getAlternatePathsForPlatform(long platformId) {
-		final ObjectArrayList<AlternatePath> result = new ObjectArrayList<>();
-		for (final AlternatePath alt : altplatforms$alternatePaths) {
-			if (alt.primaryPlatformId == platformId) {
-				result.add(alt);
-			}
-		}
-		return result;
-	}
-
 	@Inject(method = "finishGeneratingPath", at = @At("TAIL"))
 	private void altplatforms$onFinishGeneratingPath(long sidingId, CallbackInfo ci) {
 		if (generatingSidingIds.isEmpty()) {
@@ -67,25 +48,30 @@ public abstract class DepotMixin extends DepotSchema implements IDepotAlternateP
 
 	@Inject(method = "updateData", at = @At("TAIL"))
 	private void altplatforms$onUpdateData(ReaderBase readerBase, CallbackInfo ci) {
-		altplatforms$alternatePaths.clear();
-		readerBase.iterateReaderArray("alternatePaths", altplatforms$alternatePaths::clear, readerBaseChild -> altplatforms$alternatePaths.add(new AlternatePath(readerBaseChild)));
-	}
-
-	@Inject(method = "serializeData", at = @At("TAIL"))
-	private void altplatforms$onSerializeData(WriterBase writerBase, CallbackInfo ci) {
-		writerBase.writeDataset(altplatforms$alternatePaths, "alternatePaths");
+		if ((Object) this instanceof IDepotAlternatePaths) {
+			final ObjectArrayList<AlternatePath> list = ((IDepotAlternatePaths) (Object) this).altplatforms$getAlternatePaths();
+			list.clear();
+			readerBase.iterateReaderArray("alternatePaths", list::clear, readerBaseChild -> list.add(new AlternatePath(readerBaseChild)));
+		}
 	}
 
 	@Inject(method = "writePathCache", at = @At("TAIL"))
 	private void altplatforms$onWritePathCache(CallbackInfo ci) {
-		for (final AlternatePath altPath : altplatforms$alternatePaths) {
-			altPath.writePathCache(data, transportMode);
+		if ((Object) this instanceof IDepotAlternatePaths) {
+			for (final AlternatePath altPath : ((IDepotAlternatePaths) (Object) this).altplatforms$getAlternatePaths()) {
+				altPath.writePathCache(data, transportMode);
+			}
 		}
 	}
 
 	@Unique
 	private void altplatforms$generateAlternatePaths() {
-		altplatforms$alternatePaths.clear();
+		if (!((Object) this instanceof IDepotAlternatePaths)) {
+			return;
+		}
+
+		final ObjectArrayList<AlternatePath> altPaths = ((IDepotAlternatePaths) (Object) this).altplatforms$getAlternatePaths();
+		altPaths.clear();
 
 		final ObjectArrayList<PlatformStop> stops = new ObjectArrayList<>();
 		long previousPlatformId = 0;
@@ -146,19 +132,19 @@ public abstract class DepotMixin extends DepotSchema implements IDepotAlternateP
 			}
 
 			for (final Platform altPlatform : details.alternatePlatforms) {
-				altplatforms$generateSingleAlternatePath(i, prevPlatform, details.platform, altPlatform, nextPlatform);
-				altplatforms$generateSingleAlternatePath(i, prevPlatform, altPlatform, details.platform, nextPlatform);
+				altplatforms$generateSingleAlternatePath(altPaths, i, prevPlatform, details.platform, altPlatform, nextPlatform);
+				altplatforms$generateSingleAlternatePath(altPaths, i, prevPlatform, altPlatform, details.platform, nextPlatform);
 			}
 
 			if (i == 0) {
 				for (final Siding siding : savedRails) {
 					for (final Platform altPlatform : details.alternatePlatforms) {
-						final ObjectArrayList<PathData> pathFromSiding = altplatforms$findDirectPath(siding, altPlatform, -1, cruisingAltitude, 1000);
+						final ObjectArrayList<PathData> pathFromSiding = altplatforms$findDirectPath(data, siding, altPlatform, -1, cruisingAltitude, 1000);
 						if (pathFromSiding != null && pathFromSiding.size() >= 2) {
 							final ObjectArrayList<PathData> altFromSiding = new ObjectArrayList<>(pathFromSiding);
 							final Platform nextForSiding = stops.size() > 1 ? stops.get(1).platform : null;
 							if (nextForSiding != null) {
-								final ObjectArrayList<PathData> pathNext = altplatforms$findDirectPath(altPlatform, nextForSiding, 0, cruisingAltitude, 1000);
+								final ObjectArrayList<PathData> pathNext = altplatforms$findDirectPath(data, altPlatform, nextForSiding, 0, cruisingAltitude, 1000);
 								if (pathNext != null && pathNext.size() >= 2) {
 									if (SidingPathFinder.overlappingPaths(altFromSiding, pathNext)) {
 										pathNext.remove(0);
@@ -167,7 +153,7 @@ public abstract class DepotMixin extends DepotSchema implements IDepotAlternateP
 								}
 							}
 							PathData.writePathCache(altFromSiding, data, transportMode);
-							altplatforms$alternatePaths.add(new AlternatePath(0, details.platform.getId(), altPlatform.getId(), altFromSiding));
+							altPaths.add(new AlternatePath(0, details.platform.getId(), altPlatform.getId(), altFromSiding));
 							Main.LOGGER.info("Generated alternate path from siding {} for stop 0 (platform {}) via alternate platform {}", siding.getName(), details.platform.getId(), altPlatform.getId());
 						}
 					}
@@ -177,12 +163,12 @@ public abstract class DepotMixin extends DepotSchema implements IDepotAlternateP
 	}
 
 	@Unique
-	private void altplatforms$generateSingleAlternatePath(int stopIndex, Platform prevPlatform, Platform fromPlatform, Platform toPlatform, Platform nextPlatform) {
+	private void altplatforms$generateSingleAlternatePath(ObjectArrayList<AlternatePath> altPaths, int stopIndex, Platform prevPlatform, Platform fromPlatform, Platform toPlatform, Platform nextPlatform) {
 		final ObjectArrayList<PathData> altPathSegment = new ObjectArrayList<>();
 		boolean success = true;
 
 		if (prevPlatform != null) {
-			final ObjectArrayList<PathData> path1 = altplatforms$findDirectPath(prevPlatform, toPlatform, Math.max(0, stopIndex - 1), cruisingAltitude, 1000);
+			final ObjectArrayList<PathData> path1 = altplatforms$findDirectPath(data, prevPlatform, toPlatform, Math.max(0, stopIndex - 1), cruisingAltitude, 1000);
 			if (path1 != null && path1.size() >= 2) {
 				altPathSegment.addAll(path1);
 			} else {
@@ -191,7 +177,7 @@ public abstract class DepotMixin extends DepotSchema implements IDepotAlternateP
 		}
 
 		if (success && nextPlatform != null) {
-			final ObjectArrayList<PathData> path2 = altplatforms$findDirectPath(toPlatform, nextPlatform, stopIndex, cruisingAltitude, 1000);
+			final ObjectArrayList<PathData> path2 = altplatforms$findDirectPath(data, toPlatform, nextPlatform, stopIndex, cruisingAltitude, 1000);
 			if (path2 != null && path2.size() >= 2) {
 				if (!altPathSegment.isEmpty() && SidingPathFinder.overlappingPaths(altPathSegment, path2)) {
 					path2.remove(0);
@@ -204,26 +190,15 @@ public abstract class DepotMixin extends DepotSchema implements IDepotAlternateP
 
 		if (success && !altPathSegment.isEmpty()) {
 			PathData.writePathCache(altPathSegment, data, transportMode);
-			altplatforms$alternatePaths.add(new AlternatePath(stopIndex, fromPlatform.getId(), toPlatform.getId(), altPathSegment));
+			altPaths.add(new AlternatePath(stopIndex, fromPlatform.getId(), toPlatform.getId(), altPathSegment));
 			Main.LOGGER.info("Generated alternate path for stop {} (from platform {} to platform {})", stopIndex, fromPlatform.getId(), toPlatform.getId());
 		}
 	}
 
 	@Unique
 	@SuppressWarnings({"rawtypes", "unchecked"})
-	private ObjectArrayList<PathData> altplatforms$findDirectPath(SavedRailBase<?, ?> startSavedRail, SavedRailBase<?, ?> endSavedRail, int stopIndex, long cruisingAltitude, long maxMillis) {
+	private ObjectArrayList<PathData> altplatforms$findDirectPath(Data data, SavedRailBase<?, ?> startSavedRail, SavedRailBase<?, ?> endSavedRail, int stopIndex, long cruisingAltitude, long maxMillis) {
 		final SidingPathFinder sidingPathFinder = new SidingPathFinder(data, startSavedRail, endSavedRail, stopIndex);
 		return Utilities.loopUntilTimeout(() -> ((SidingPathFinderAccessor) (Object) sidingPathFinder).altplatforms$callTick(cruisingAltitude), maxMillis);
-	}
-
-	@Unique
-	private static class PlatformStop {
-		private final Platform platform;
-		private final ObjectArrayList<Platform> alternatePlatforms;
-
-		private PlatformStop(Platform platform, ObjectArrayList<Platform> alternatePlatforms) {
-			this.platform = platform;
-			this.alternatePlatforms = alternatePlatforms;
-		}
 	}
 }
