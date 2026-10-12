@@ -1,0 +1,19 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "org.mtr.altplatforms.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "mixins": [
+    "DepotMixin",
+    "RoutePlatformDataMixin",
+    "SidingPathFinderAccessor",
+    "VehicleExtraDataMixin",
+    "VehicleMixin"
+  ],
+  "client": [
+    "DashboardScreenMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

@@ -1,0 +1,51 @@
+plugins {
+	id "fabric-loom" version "1.10-SNAPSHOT"
+}
+
+base {
+	archivesName = "${rootProject.archives_base_name}-fabric"
+}
+
+def yarn_version = project.properties["yarn_mappings_${rootProject.minecraft_version}"]
+def fabric_api_version = project.properties["fabric_api_version_${rootProject.minecraft_version}"]
+
+sourceSets {
+	main {
+		java {
+			srcDir "../src/main/java"
+		}
+		resources {
+			srcDir "../src/main/resources"
+		}
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
+	mappings "net.fabricmc:yarn:${yarn_version}:v2"
+	modImplementation "net.fabricmc:fabric-loader:${rootProject.fabric_loader_version}"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
+
+	modImplementation "maven.modrinth:minecraft-transit-railway:FABRIC-${rootProject.mtr_version}+${rootProject.minecraft_version}"
+}
+
+loom {
+	runConfigs.configureEach {
+		ideConfigGenerated = true
+	}
+	mixin {
+		defaultRefmapName = "mtr_alt_platforms.refmap.json"
+	}
+}
+
+processResources {
+	inputs.property "version", project.version
+	inputs.property "minecraft_version", rootProject.minecraft_version
+
+	filesMatching("fabric.mod.json") {
+		expand(
+			"version": project.version,
+			"minecraft_version": rootProject.minecraft_version
+		)
+	}
+}

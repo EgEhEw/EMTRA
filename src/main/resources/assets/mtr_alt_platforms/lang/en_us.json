@@ -1,0 +1,6 @@
+{
+  "modmenu.nameTranslation.mtr_alt_platforms": "MTR Alternate Platforms",
+  "modmenu.descriptionTranslation.mtr_alt_platforms": "Allows trains to automatically divert to alternate platforms when the scheduled platform is blocked.",
+  "gui.mtr.alt_platforms": "Alternate Platforms",
+  "gui.mtr.alternate_platforms": "Alternate Platforms"
+}

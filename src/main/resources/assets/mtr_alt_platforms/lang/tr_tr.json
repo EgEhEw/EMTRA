@@ -1,0 +1,6 @@
+{
+  "modmenu.nameTranslation.mtr_alt_platforms": "MTR Alternatif Peronlar",
+  "modmenu.descriptionTranslation.mtr_alt_platforms": "Planlanan peron dolu olduğunda trenlerin otomatik olarak alternatif perona geçmesini sağlar.",
+  "gui.mtr.alt_platforms": "Alternatif Peronlar",
+  "gui.mtr.alternate_platforms": "Alternatif Peronlar"
+}

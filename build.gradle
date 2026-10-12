@@ -1,0 +1,48 @@
+plugins {
+	id "java"
+}
+
+group = project.maven_group
+version = "${project.mod_version}+${project.minecraft_version}"
+
+subprojects {
+	apply plugin: "java"
+
+	group = rootProject.maven_group
+	version = "${rootProject.mod_version}+${rootProject.minecraft_version}"
+
+	java {
+		toolchain {
+			languageVersion = JavaLanguageVersion.of(17)
+		}
+		withSourcesJar()
+	}
+
+	tasks.withType(JavaCompile).configureEach {
+		options.encoding = "UTF-8"
+	}
+
+	dependencies {
+		compileOnly "com.google.code.findbugs:jsr305:3.0.2"
+	}
+
+	repositories {
+		mavenCentral()
+		maven {
+			name = "Fabric"
+			url = "https://maven.fabricmc.net/"
+		}
+		maven {
+			name = "Forge"
+			url = "https://maven.minecraftforge.net/"
+		}
+		maven {
+			name = "Modrinth"
+			url = "https://api.modrinth.com/maven"
+		}
+		maven {
+			name = "TerraformersMC"
+			url = "https://maven.terraformersmc.com/"
+		}
+	}
+}

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "mtr_alt_platforms",
+  "version": "${version}",
+  "name": "MTR Alternate Platforms",
+  "description": "Adds alternate platform support to Minecraft Transit Railway, allowing trains to automatically divert to clear platforms.",
+  "authors": [
+    "ege"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "org.mtr.altplatforms.fabric.AltPlatformsFabric"
+    ]
+  },
+  "mixins": [
+    "mtr_alt_platforms.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.14.0",
+    "minecraft": ">=1.20.1 <=1.20.4",
+    "fabric-api": "*",
+    "mtr": ">=4.0.0"
+  }
+}

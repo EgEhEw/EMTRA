@@ -1,0 +1,31 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+
+[[mods]]
+modId="mtr_alt_platforms"
+version="${version}"
+displayName="MTR Alternate Platforms"
+authors="ege"
+description='''Adds alternate platform support to Minecraft Transit Railway, allowing trains to automatically divert to clear platforms.'''
+
+[[dependencies.mtr_alt_platforms]]
+    modId="forge"
+    mandatory=true
+    versionRange="[47,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.mtr_alt_platforms]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="[1.20.1,1.20.5)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.mtr_alt_platforms]]
+    modId="mtr"
+    mandatory=true
+    versionRange="[4.0.0,)"
+    ordering="NONE"
+    side="BOTH"

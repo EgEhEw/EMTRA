@@ -1,0 +1,73 @@
+plugins {
+	id "net.minecraftforge.gradle" version "6.0.36"
+	id "org.spongepowered.mixin" version "+"
+}
+
+base {
+	archivesName = "${rootProject.archives_base_name}-forge"
+}
+
+def forge_version = project.properties["forge_version_${rootProject.minecraft_version}"]
+
+minecraft {
+	mappings channel: "official", version: rootProject.minecraft_version
+	runs {
+		configureEach {
+			property "forge.logging.markers", "REGISTRIES"
+			property "forge.logging.console.level", "debug"
+		}
+		client {}
+		server { args "--nogui" }
+	}
+}
+
+sourceSets {
+	main {
+		java {
+			srcDir "../src/main/java"
+		}
+		resources {
+			srcDir "../src/main/resources"
+		}
+	}
+}
+
+dependencies {
+	minecraft "net.minecraftforge:forge:${rootProject.minecraft_version}-${forge_version}"
+	implementation fg.deobf("maven.modrinth:minecraft-transit-railway:FORGE-${rootProject.mtr_version}+${rootProject.minecraft_version}")
+	annotationProcessor "org.spongepowered:mixin:+:processor"
+}
+
+mixin {
+	add sourceSets.main, "mtr_alt_platforms.refmap.json"
+	config "mtr_alt_platforms.mixins.json"
+	debug.verbose = true
+	debug.export = true
+}
+
+repositories {
+	exclusiveContent {
+		forRepository {
+			maven {
+				name = "Modrinth"
+				url = "https://api.modrinth.com/maven"
+			}
+		}
+		forRepositories(fg.repository)
+		filter {
+			includeGroup "maven.modrinth"
+		}
+	}
+}
+
+processResources {
+	inputs.property "version", project.version
+	inputs.property "minecraft_version", rootProject.minecraft_version
+
+	filesMatching("META-INF/mods.toml") {
+		expand(
+			"version": project.version,
+			"minecraft_version": rootProject.minecraft_version
+		)
+	}
+}
