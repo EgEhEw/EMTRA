@@ -10,6 +10,7 @@
     "RoutePlatformDataSchemaMixin",
     "SidingPathFinderAccessor",
     "VehicleExtraDataMixin",
+    "VehicleExtraDataSchemaMixin",
     "VehicleMixin"
   ],
   "client": [

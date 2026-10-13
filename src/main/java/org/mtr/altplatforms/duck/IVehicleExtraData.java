@@ -8,4 +8,8 @@ public interface IVehicleExtraData {
 	long altplatforms$getRepeatIndex1();
 	long altplatforms$getRepeatIndex2();
 	double altplatforms$getTotalDistance();
+	long altplatforms$getDynamicRepeatIndex1();
+	long altplatforms$getDynamicRepeatIndex2();
+	double altplatforms$getDynamicTotalDistance();
+	void altplatforms$setDynamicValues(long repeatIndex1, long repeatIndex2, double totalDistance);
 }

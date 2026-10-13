@@ -17,6 +17,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import javax.annotation.Nullable;
@@ -47,6 +48,22 @@ public abstract class VehicleMixin extends VehicleSchema {
 	@Shadow
 	abstract void setNextStoppingIndex();
 
+	@Shadow
+	abstract double getPathStoppingPoint();
+
+	@Unique
+	private int altplatforms$lastDivertedStopIndex = -1;
+
+	@ModifyArg(method = "simulateMoving", at = @At(value = "INVOKE", target = "Lorg/mtr/core/data/Vehicle;railBlockedDistance(IDDLorg/mtr/libraries/it/unimi/dsi/fastutil/objects/ObjectArrayList;ZZ)D"), index = 2)
+	private double altplatforms$onModifyCheckDistance(double checkDistance) {
+		final double pathStoppingPoint = getPathStoppingPoint();
+		if (pathStoppingPoint > railProgress) {
+			final double distanceToStop = Math.max(0, pathStoppingPoint - railProgress);
+			return Math.min(checkDistance, distanceToStop);
+		}
+		return checkDistance;
+	}
+
 	@Inject(method = "simulateMoving", at = @At("HEAD"))
 	private void altplatforms$onSimulateMoving(long millisElapsed, @Nullable ObjectArrayList<Object2ObjectAVLTreeMap<Position, Object2ObjectAVLTreeMap<Position, VehiclePosition>>> vehiclePositions, int currentIndex, CallbackInfo ci) {
 		altplatforms$checkAlternatePlatformDiversion(currentIndex, vehiclePositions);
@@ -75,6 +92,14 @@ public abstract class VehicleMixin extends VehicleSchema {
 		}
 
 		if (upcomingPlatformPathData == null || upcomingPlatformIndex < 0) {
+			return;
+		}
+
+		final int currentStopIndex = upcomingPlatformPathData.getStopIndex();
+		if (altplatforms$lastDivertedStopIndex >= 0 && altplatforms$lastDivertedStopIndex != currentStopIndex) {
+			altplatforms$lastDivertedStopIndex = -1;
+		}
+		if (altplatforms$lastDivertedStopIndex == currentStopIndex) {
 			return;
 		}
 
@@ -148,12 +173,23 @@ public abstract class VehicleMixin extends VehicleSchema {
 				continue;
 			}
 
+			Main.LOGGER.info("Vehicle {}: Upcoming platform {} is blocked! Checking alternate platform {}...", id, upcomingPlatformId, altPath.alternatePlatformId);
+
 			int altPlatformIndex = -1;
 			for (int j = divAltIndex; j < altPath.alternatePath.size(); j++) {
 				final PathData altPd = altPath.alternatePath.get(j);
-				if (altPd.getSavedRailBaseId() == altPath.alternatePlatformId || altPd.getDwellTime() > 0) {
+				if (altPd.getSavedRailBaseId() == altPath.alternatePlatformId) {
 					altPlatformIndex = j;
 					break;
+				}
+			}
+			if (altPlatformIndex < 0) {
+				for (int j = divAltIndex; j < altPath.alternatePath.size(); j++) {
+					final PathData altPd = altPath.alternatePath.get(j);
+					if (altPd.getDwellTime() > 0) {
+						altPlatformIndex = j;
+						break;
+					}
 				}
 			}
 
@@ -198,6 +234,7 @@ public abstract class VehicleMixin extends VehicleSchema {
 			}
 
 			if (mergeCurrentIndex < 0 || mergeAltIndex < 0) {
+				Main.LOGGER.info("Vehicle {}: Merge point not found for alternate platform {}", id, altPath.alternatePlatformId);
 				continue;
 			}
 
@@ -222,6 +259,7 @@ public abstract class VehicleMixin extends VehicleSchema {
 			}
 
 			if (altBlocked) {
+				Main.LOGGER.info("Vehicle {}: Alternate platform {} is also blocked", id, altPath.alternatePlatformId);
 				continue;
 			}
 
@@ -293,6 +331,7 @@ public abstract class VehicleMixin extends VehicleSchema {
 			duckExtraData.altplatforms$setPath(newPath, newRepeatIndex1, newRepeatIndex2, newTotalDistance);
 			setNextStoppingIndex();
 			stoppingCooldown = 0;
+			altplatforms$lastDivertedStopIndex = currentStopIndex;
 			Main.LOGGER.info("Vehicle {} diverted to alternate platform {} at stop {}", id, altPath.alternatePlatformId, altPath.stopIndex);
 			break;
 		}

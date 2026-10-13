@@ -5,6 +5,7 @@ import org.mtr.core.data.PathData;
 import org.mtr.core.data.VehicleExtraData;
 import org.mtr.core.generated.data.VehicleExtraDataSchema;
 import org.mtr.core.serializer.ReaderBase;
+import org.mtr.core.serializer.WriterBase;
 import org.mtr.libraries.it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import org.mtr.libraries.it.unimi.dsi.fastutil.objects.ObjectImmutableList;
 import org.spongepowered.asm.mixin.Mixin;
@@ -13,6 +14,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(value = VehicleExtraData.class, remap = false)
@@ -58,6 +60,40 @@ public abstract class VehicleExtraDataMixin extends VehicleExtraDataSchema imple
 	@Override
 	public double altplatforms$getTotalDistance() {
 		return altplatforms$dynamicTotalDistance >= 0 ? altplatforms$dynamicTotalDistance : totalDistance;
+	}
+
+	@Override
+	public void altplatforms$setDynamicValues(long repeatIndex1, long repeatIndex2, double totalDistance) {
+		this.altplatforms$dynamicRepeatIndex1 = repeatIndex1;
+		this.altplatforms$dynamicRepeatIndex2 = repeatIndex2;
+		this.altplatforms$dynamicTotalDistance = totalDistance;
+	}
+
+	@Override
+	public long altplatforms$getDynamicRepeatIndex1() {
+		return altplatforms$dynamicRepeatIndex1;
+	}
+
+	@Override
+	public long altplatforms$getDynamicRepeatIndex2() {
+		return altplatforms$dynamicRepeatIndex2;
+	}
+
+	@Override
+	public double altplatforms$getDynamicTotalDistance() {
+		return altplatforms$dynamicTotalDistance;
+	}
+
+	@Inject(method = "copy", at = @At("RETURN"))
+	private void altplatforms$onCopy(int pathUpdateIndex, CallbackInfoReturnable<VehicleExtraData> cir) {
+		final VehicleExtraData copy = cir.getReturnValue();
+		if (copy != null && (Object) copy instanceof IVehicleExtraData) {
+			((IVehicleExtraData) (Object) copy).altplatforms$setDynamicValues(
+				altplatforms$dynamicRepeatIndex1,
+				altplatforms$dynamicRepeatIndex2,
+				altplatforms$dynamicTotalDistance
+			);
+		}
 	}
 
 	@Inject(method = "getRepeatIndex1", at = @At("HEAD"), cancellable = true)

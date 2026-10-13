@@ -58,15 +58,19 @@ public abstract class DashboardScreenMixin extends ScreenExtension implements IG
 		final int bottomRowY = height - SQUARE_SIZE;
 		IDrawing.setPositionAndWidth(altplatforms$buttonSelectAlternatePlatforms, 0, bottomRowY, PANEL_WIDTH / 2);
 		IDrawing.setPositionAndWidth(buttonDoneEditingRouteDestination, PANEL_WIDTH / 2, bottomRowY, PANEL_WIDTH / 2);
+		altplatforms$buttonSelectAlternatePlatforms.visible = false;
 		addChild(new ClickableWidget(altplatforms$buttonSelectAlternatePlatforms));
 	}
 
 	@Inject(method = "toggleButtons", at = @At("TAIL"))
 	private void altplatforms$onToggleButtons(CallbackInfo ci) {
 		if (altplatforms$buttonSelectAlternatePlatforms != null) {
-			final boolean visible = buttonDoneEditingRouteDestination != null && buttonDoneEditingRouteDestination.visible;
+			final boolean visible = buttonDoneEditingRouteDestination != null && buttonDoneEditingRouteDestination.visible && editingRoute != null && isValidRoutePlatformIndex();
 			altplatforms$buttonSelectAlternatePlatforms.visible = visible;
-			if (visible && isValidRoutePlatformIndex()) {
+			if (visible) {
+				final int bottomRowY = height - SQUARE_SIZE;
+				IDrawing.setPositionAndWidth(altplatforms$buttonSelectAlternatePlatforms, 0, bottomRowY, PANEL_WIDTH / 2);
+				IDrawing.setPositionAndWidth(buttonDoneEditingRouteDestination, PANEL_WIDTH / 2, bottomRowY, PANEL_WIDTH / 2);
 				final RoutePlatformData rpd = editingRoute.getRoutePlatforms().get(editingRoutePlatformIndex);
 				final int count = ((IAltRoutePlatformData) (Object) rpd).altplatforms$getAlternatePlatformIds().size();
 				final MutableText text = TextHelper.translatable("gui.mtr.alt_platforms");
