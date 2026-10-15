@@ -163,6 +163,7 @@ public abstract class DepotMixin extends DepotSchema {
 
 			for (final Platform altPlatform : details.alternatePlatforms) {
 				altplatforms$generateSingleAlternatePath(altPaths, i, prevPlatform, details.platform, altPlatform, nextPlatform);
+				altplatforms$generateSingleAlternatePath(altPaths, i, prevPlatform, altPlatform, details.platform, nextPlatform);
 			}
 
 			if (i == 0) {

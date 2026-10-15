@@ -52,7 +52,7 @@ public abstract class VehicleMixin extends VehicleSchema {
 	abstract double getPathStoppingPoint();
 
 	@Unique
-	private int altplatforms$lastDivertedStopIndex = -1;
+	private long altplatforms$lastDiversionTime = 0;
 
 	@ModifyArg(method = "simulateMoving", at = @At(value = "INVOKE", target = "Lorg/mtr/core/data/Vehicle;railBlockedDistance(IDDLorg/mtr/libraries/it/unimi/dsi/fastutil/objects/ObjectArrayList;ZZ)D"), index = 2)
 	private double altplatforms$onModifyCheckDistance(double checkDistance) {
@@ -80,6 +80,10 @@ public abstract class VehicleMixin extends VehicleSchema {
 			return;
 		}
 
+		if (System.currentTimeMillis() - altplatforms$lastDiversionTime < 2000L) {
+			return;
+		}
+
 		PathData upcomingPlatformPathData = null;
 		int upcomingPlatformIndex = -1;
 		for (int i = currentIndex; i < vehicleExtraData.immutablePath.size(); i++) {
@@ -92,14 +96,6 @@ public abstract class VehicleMixin extends VehicleSchema {
 		}
 
 		if (upcomingPlatformPathData == null || upcomingPlatformIndex < 0) {
-			return;
-		}
-
-		final int currentStopIndex = upcomingPlatformPathData.getStopIndex();
-		if (altplatforms$lastDivertedStopIndex >= 0 && altplatforms$lastDivertedStopIndex != currentStopIndex) {
-			altplatforms$lastDivertedStopIndex = -1;
-		}
-		if (altplatforms$lastDivertedStopIndex == currentStopIndex) {
 			return;
 		}
 
@@ -120,7 +116,8 @@ public abstract class VehicleMixin extends VehicleSchema {
 
 			int divCurrentIndex = -1;
 			int divAltIndex = -1;
-			for (int i = currentIndex; i <= upcomingPlatformIndex; i++) {
+			final int searchStart = Math.max(0, currentIndex - 2);
+			for (int i = searchStart; i <= upcomingPlatformIndex; i++) {
 				final PathData curPd = vehicleExtraData.immutablePath.get(i);
 				for (int j = 0; j < altPath.alternatePath.size(); j++) {
 					final PathData altPd = altPath.alternatePath.get(j);
@@ -146,12 +143,23 @@ public abstract class VehicleMixin extends VehicleSchema {
 			}
 
 			final double divergenceDistance = vehicleExtraData.immutablePath.get(divCurrentIndex).getStartDistance();
-			if (railProgress > divergenceDistance + 0.01) {
+			final double maxAllowedProgress = (speed != 0) ? (divergenceDistance + 0.01) : (divergenceDistance + 2.0);
+			if (railProgress > maxAllowedProgress) {
 				continue;
 			}
 
+			int upcomingPlatformEndIndex = upcomingPlatformIndex;
+			for (int i = upcomingPlatformIndex + 1; i < vehicleExtraData.immutablePath.size(); i++) {
+				final PathData pd = vehicleExtraData.immutablePath.get(i);
+				if (pd.getSavedRailBaseId() == upcomingPlatformId || pd.getDwellTime() > 0) {
+					upcomingPlatformEndIndex = i;
+				} else {
+					break;
+				}
+			}
+
 			boolean currentBranchBlocked = false;
-			for (int i = divCurrentIndex; i <= upcomingPlatformIndex; i++) {
+			for (int i = divCurrentIndex; i <= upcomingPlatformEndIndex; i++) {
 				final PathData curPd = vehicleExtraData.immutablePath.get(i);
 				if (curPd.isSignalBlocked(id, Rail.BlockReservation.DO_NOT_RESERVE)) {
 					currentBranchBlocked = true;
@@ -173,34 +181,28 @@ public abstract class VehicleMixin extends VehicleSchema {
 				continue;
 			}
 
-			Main.LOGGER.info("Vehicle {}: Upcoming platform {} is blocked! Checking alternate platform {}...", id, upcomingPlatformId, altPath.alternatePlatformId);
-
-			int altPlatformIndex = -1;
+			int altPlatformStartIndex = -1;
+			int altPlatformEndIndex = -1;
 			for (int j = divAltIndex; j < altPath.alternatePath.size(); j++) {
 				final PathData altPd = altPath.alternatePath.get(j);
-				if (altPd.getSavedRailBaseId() == altPath.alternatePlatformId) {
-					altPlatformIndex = j;
-					break;
-				}
-			}
-			if (altPlatformIndex < 0) {
-				for (int j = divAltIndex; j < altPath.alternatePath.size(); j++) {
-					final PathData altPd = altPath.alternatePath.get(j);
-					if (altPd.getDwellTime() > 0) {
-						altPlatformIndex = j;
-						break;
+				if (altPd.getSavedRailBaseId() == altPath.alternatePlatformId || altPd.getDwellTime() > 0) {
+					if (altPlatformStartIndex < 0) {
+						altPlatformStartIndex = j;
 					}
+					altPlatformEndIndex = j;
+				} else if (altPlatformStartIndex >= 0) {
+					break;
 				}
 			}
 
 			int mergeCurrentIndex = -1;
 			int mergeAltIndex = -1;
 			boolean isWrapAroundMerge = false;
-			final int searchAltStart = Math.max(divAltIndex, altPlatformIndex + 1);
+			final int searchAltStart = Math.max(divAltIndex, (altPlatformEndIndex >= 0 ? altPlatformEndIndex : altPlatformStartIndex) + 1);
 
 			final IVehicleExtraData duckExtraData = (IVehicleExtraData) (Object) vehicleExtraData;
 
-			for (int i = upcomingPlatformIndex + 1; i < vehicleExtraData.immutablePath.size(); i++) {
+			for (int i = upcomingPlatformEndIndex + 1; i < vehicleExtraData.immutablePath.size(); i++) {
 				final PathData curPd = vehicleExtraData.immutablePath.get(i);
 				for (int j = searchAltStart; j < altPath.alternatePath.size(); j++) {
 					final PathData altPd = altPath.alternatePath.get(j);
@@ -234,11 +236,10 @@ public abstract class VehicleMixin extends VehicleSchema {
 			}
 
 			if (mergeCurrentIndex < 0 || mergeAltIndex < 0) {
-				Main.LOGGER.info("Vehicle {}: Merge point not found for alternate platform {}", id, altPath.alternatePlatformId);
 				continue;
 			}
 
-			final int checkAltEnd = altPlatformIndex >= 0 ? altPlatformIndex : mergeAltIndex;
+			final int checkAltEnd = altPlatformEndIndex >= 0 ? altPlatformEndIndex : mergeAltIndex;
 			boolean altBlocked = false;
 			for (int j = divAltIndex; j <= checkAltEnd; j++) {
 				final PathData altPd = altPath.alternatePath.get(j);
@@ -259,7 +260,6 @@ public abstract class VehicleMixin extends VehicleSchema {
 			}
 
 			if (altBlocked) {
-				Main.LOGGER.info("Vehicle {}: Alternate platform {} is also blocked", id, altPath.alternatePlatformId);
 				continue;
 			}
 
@@ -315,7 +315,7 @@ public abstract class VehicleMixin extends VehicleSchema {
 				} else if (divCurrentIndex < oldRepeat1 && mergeCurrentIndex <= oldRepeat1) {
 					newRepeatIndex1 = oldRepeat1 + delta;
 				} else {
-					newRepeatIndex1 = altPlatformIndex >= 0 ? divCurrentIndex + (altPlatformIndex - divAltIndex) : divCurrentIndex;
+					newRepeatIndex1 = altPlatformStartIndex >= 0 ? divCurrentIndex + (altPlatformStartIndex - divAltIndex) : divCurrentIndex;
 				}
 
 				if (oldRepeat2 > 0) {
@@ -331,7 +331,7 @@ public abstract class VehicleMixin extends VehicleSchema {
 			duckExtraData.altplatforms$setPath(newPath, newRepeatIndex1, newRepeatIndex2, newTotalDistance);
 			setNextStoppingIndex();
 			stoppingCooldown = 0;
-			altplatforms$lastDivertedStopIndex = currentStopIndex;
+			altplatforms$lastDiversionTime = System.currentTimeMillis();
 			Main.LOGGER.info("Vehicle {} diverted to alternate platform {} at stop {}", id, altPath.alternatePlatformId, altPath.stopIndex);
 			break;
 		}
