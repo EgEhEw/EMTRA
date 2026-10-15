@@ -17,7 +17,7 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyArg;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import javax.annotation.Nullable;
@@ -51,22 +51,105 @@ public abstract class VehicleMixin extends VehicleSchema {
 	@Shadow
 	abstract double getPathStoppingPoint();
 
+	@Shadow
+	abstract double railBlockedDistance(int currentIndex, double railProgress, double checkDistance, @Nullable ObjectArrayList<Object2ObjectAVLTreeMap<Position, Object2ObjectAVLTreeMap<Position, VehiclePosition>>> vehiclePositions, boolean checkSignals, boolean isOccupied);
+
 	@Unique
 	private long altplatforms$lastDiversionTime = 0;
 
-	@ModifyArg(method = "simulateMoving", at = @At(value = "INVOKE", target = "Lorg/mtr/core/data/Vehicle;railBlockedDistance(IDDLorg/mtr/libraries/it/unimi/dsi/fastutil/objects/ObjectArrayList;ZZ)D"), index = 2)
-	private double altplatforms$onModifyCheckDistance(double checkDistance) {
-		final double pathStoppingPoint = getPathStoppingPoint();
-		if (pathStoppingPoint > railProgress) {
-			final double distanceToStop = Math.max(0, pathStoppingPoint - railProgress);
-			return Math.min(checkDistance, distanceToStop);
+	@Unique
+	private double altplatforms$getPhysicalBlockedDistance(
+			int currentIndex,
+			int stopIndex,
+			double pathStoppingPoint,
+			@Nullable ObjectArrayList<Object2ObjectAVLTreeMap<Position, Object2ObjectAVLTreeMap<Position, VehiclePosition>>> vehiclePositions
+	) {
+		if (vehiclePositions == null || vehicleExtraData == null) {
+			return -1;
 		}
-		return checkDistance;
+
+		final int maxIndex = Math.min(stopIndex, vehicleExtraData.immutablePath.size() - 1);
+		for (int i = currentIndex; i <= maxIndex; i++) {
+			final PathData pd = vehicleExtraData.immutablePath.get(i);
+			if (pd.getStartDistance() >= pathStoppingPoint) {
+				break;
+			}
+			for (int p = 0; p < 2; p++) {
+				final VehiclePosition vp = Data.tryGet(vehiclePositions.get(p), pd.getOrderedPosition1(), pd.getOrderedPosition2());
+				if (vp != null) {
+					final double overlap = vp.getClosestOverlap(0, pd.getRailLength(), pd.reversePositions, id);
+					if (overlap >= 0) {
+						final double startDist = Math.max(0, pd.getStartDistance() - railProgress);
+						return Math.max(0, startDist + overlap - transportMode.stoppingSpace);
+					}
+				}
+			}
+		}
+		return -1;
+	}
+
+	@Redirect(method = "simulateMoving", at = @At(value = "INVOKE", target = "Lorg/mtr/core/data/Vehicle;railBlockedDistance(IDDLorg/mtr/libraries/it/unimi/dsi/fastutil/objects/ObjectArrayList;ZZ)D"))
+	private double altplatforms$onRailBlockedDistance(
+			Vehicle vehicle,
+			int currentIndex,
+			double railProgress,
+			double checkDistance,
+			@Nullable ObjectArrayList<Object2ObjectAVLTreeMap<Position, Object2ObjectAVLTreeMap<Position, VehiclePosition>>> vehiclePositions,
+			boolean checkSignals,
+			boolean isOccupied
+	) {
+		final double pathStoppingPoint = getPathStoppingPoint();
+		final int stopIndex = (int) nextStoppingIndexAto;
+		final PathData stoppingPathData = (vehicleExtraData != null && stopIndex >= 0 && stopIndex < vehicleExtraData.immutablePath.size())
+				? vehicleExtraData.immutablePath.get(stopIndex) : null;
+		final boolean isPlatformStop = stoppingPathData != null && stoppingPathData.getDwellTime() > 0;
+
+		final double effectiveCheckDistance = (isPlatformStop && pathStoppingPoint > railProgress)
+				? Math.min(checkDistance, Math.max(0, pathStoppingPoint - railProgress))
+				: checkDistance;
+
+		final double mtrBlockedDistance = railBlockedDistance(currentIndex, railProgress, effectiveCheckDistance, vehiclePositions, checkSignals, isOccupied);
+
+		if (isPlatformStop && pathStoppingPoint > railProgress) {
+			if (mtrBlockedDistance < 0) {
+				stoppingCooldown = 0;
+				return -1.0;
+			}
+
+			final double obstructionProgress = railProgress + mtrBlockedDistance;
+			if (obstructionProgress >= pathStoppingPoint - 1.0) {
+				stoppingCooldown = 0;
+				return -1.0;
+			}
+
+			final double physicalBlockedDistance = altplatforms$getPhysicalBlockedDistance(currentIndex, stopIndex, pathStoppingPoint, vehiclePositions);
+			if (physicalBlockedDistance >= 0) {
+				return physicalBlockedDistance;
+			} else {
+				stoppingCooldown = 0;
+				return -1.0;
+			}
+		}
+
+		return mtrBlockedDistance;
 	}
 
 	@Inject(method = "simulateMoving", at = @At("HEAD"))
 	private void altplatforms$onSimulateMoving(long millisElapsed, @Nullable ObjectArrayList<Object2ObjectAVLTreeMap<Position, Object2ObjectAVLTreeMap<Position, VehiclePosition>>> vehiclePositions, int currentIndex, CallbackInfo ci) {
 		altplatforms$checkAlternatePlatformDiversion(currentIndex, vehiclePositions);
+
+		if (stoppingCooldown > 0) {
+			final double pathStoppingPoint = getPathStoppingPoint();
+			final int stopIndex = (int) nextStoppingIndexAto;
+			final PathData stoppingPathData = (vehicleExtraData != null && stopIndex >= 0 && stopIndex < vehicleExtraData.immutablePath.size())
+					? vehicleExtraData.immutablePath.get(stopIndex) : null;
+			if (stoppingPathData != null && stoppingPathData.getDwellTime() > 0 && pathStoppingPoint > railProgress) {
+				final double physicalBlockedDistance = altplatforms$getPhysicalBlockedDistance(currentIndex, stopIndex, pathStoppingPoint, vehiclePositions);
+				if (physicalBlockedDistance < 0) {
+					stoppingCooldown = 0;
+				}
+			}
+		}
 	}
 
 	@Inject(method = "simulateStopped", at = @At("HEAD"))
