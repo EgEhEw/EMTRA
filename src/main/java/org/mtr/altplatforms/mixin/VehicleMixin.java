@@ -58,34 +58,59 @@ public abstract class VehicleMixin extends VehicleSchema {
 	private long altplatforms$lastDiversionTime = 0;
 
 	@Unique
-	private double altplatforms$getPhysicalBlockedDistance(
+	private boolean altplatforms$isTargetPlatformOccupied(
 			int currentIndex,
-			int stopIndex,
-			double pathStoppingPoint,
 			@Nullable ObjectArrayList<Object2ObjectAVLTreeMap<Position, Object2ObjectAVLTreeMap<Position, VehiclePosition>>> vehiclePositions
 	) {
-		if (vehiclePositions == null || vehicleExtraData == null) {
-			return -1;
+		if (vehicleExtraData == null) {
+			return false;
 		}
 
-		final int maxIndex = Math.min(stopIndex, vehicleExtraData.immutablePath.size() - 1);
-		for (int i = currentIndex; i <= maxIndex; i++) {
+		PathData upcomingPlatformPathData = null;
+		int upcomingPlatformIndex = -1;
+		for (int i = currentIndex; i < vehicleExtraData.immutablePath.size(); i++) {
 			final PathData pd = vehicleExtraData.immutablePath.get(i);
-			if (pd.getStartDistance() >= pathStoppingPoint) {
+			if (pd.getSavedRailBaseId() != 0 && pd.getDwellTime() > 0) {
+				upcomingPlatformPathData = pd;
+				upcomingPlatformIndex = i;
 				break;
 			}
-			for (int p = 0; p < 2; p++) {
-				final VehiclePosition vp = Data.tryGet(vehiclePositions.get(p), pd.getOrderedPosition1(), pd.getOrderedPosition2());
-				if (vp != null) {
-					final double overlap = vp.getClosestOverlap(0, pd.getRailLength(), pd.reversePositions, id);
-					if (overlap >= 0) {
-						final double startDist = Math.max(0, pd.getStartDistance() - railProgress);
-						return Math.max(0, startDist + overlap - transportMode.stoppingSpace);
+		}
+
+		if (upcomingPlatformPathData == null || upcomingPlatformIndex < 0) {
+			return false;
+		}
+
+		final long targetPlatformId = upcomingPlatformPathData.getSavedRailBaseId();
+		int platformEndIndex = upcomingPlatformIndex;
+		for (int i = upcomingPlatformIndex + 1; i < vehicleExtraData.immutablePath.size(); i++) {
+			final PathData pd = vehicleExtraData.immutablePath.get(i);
+			if (pd.getSavedRailBaseId() == targetPlatformId || pd.getDwellTime() > 0) {
+				platformEndIndex = i;
+			} else {
+				break;
+			}
+		}
+
+		final int maxIndex = Math.min(platformEndIndex, vehicleExtraData.immutablePath.size() - 1);
+		for (int i = currentIndex; i <= maxIndex; i++) {
+			final PathData pd = vehicleExtraData.immutablePath.get(i);
+
+			if (pd.getSavedRailBaseId() == targetPlatformId && pd.isSignalBlocked(id, Rail.BlockReservation.DO_NOT_RESERVE)) {
+				return true;
+			}
+
+			if (vehiclePositions != null) {
+				for (int p = 0; p < 2; p++) {
+					final VehiclePosition vp = Data.tryGet(vehiclePositions.get(p), pd.getOrderedPosition1(), pd.getOrderedPosition2());
+					if (vp != null && vp.getClosestOverlap(0, pd.getRailLength(), pd.reversePositions, id) >= 0) {
+						return true;
 					}
 				}
 			}
 		}
-		return -1;
+
+		return false;
 	}
 
 	@Redirect(method = "simulateMoving", at = @At(value = "INVOKE", target = "Lorg/mtr/core/data/Vehicle;railBlockedDistance(IDDLorg/mtr/libraries/it/unimi/dsi/fastutil/objects/ObjectArrayList;ZZ)D"))
@@ -104,11 +129,7 @@ public abstract class VehicleMixin extends VehicleSchema {
 				? vehicleExtraData.immutablePath.get(stopIndex) : null;
 		final boolean isPlatformStop = stoppingPathData != null && stoppingPathData.getDwellTime() > 0;
 
-		final double effectiveCheckDistance = (isPlatformStop && pathStoppingPoint > railProgress)
-				? Math.min(checkDistance, Math.max(0, pathStoppingPoint - railProgress))
-				: checkDistance;
-
-		final double mtrBlockedDistance = railBlockedDistance(currentIndex, railProgress, effectiveCheckDistance, vehiclePositions, checkSignals, isOccupied);
+		final double mtrBlockedDistance = railBlockedDistance(currentIndex, railProgress, checkDistance, vehiclePositions, checkSignals, isOccupied);
 
 		if (isPlatformStop && pathStoppingPoint > railProgress) {
 			if (mtrBlockedDistance < 0) {
@@ -116,19 +137,18 @@ public abstract class VehicleMixin extends VehicleSchema {
 				return -1.0;
 			}
 
-			final double obstructionProgress = railProgress + mtrBlockedDistance;
-			if (obstructionProgress >= pathStoppingPoint - 1.0) {
-				stoppingCooldown = 0;
-				return -1.0;
+			final boolean platformOccupied = altplatforms$isTargetPlatformOccupied(currentIndex, vehiclePositions);
+			if (platformOccupied) {
+				// Target platform or approach track is ACTUALLY occupied by another vehicle!
+				// DO NOT override MTR! Let the vehicle stop safely to avoid collision!
+				return mtrBlockedDistance;
 			}
 
-			final double physicalBlockedDistance = altplatforms$getPhysicalBlockedDistance(currentIndex, stopIndex, pathStoppingPoint, vehiclePositions);
-			if (physicalBlockedDistance >= 0) {
-				return physicalBlockedDistance;
-			} else {
-				stoppingCooldown = 0;
-				return -1.0;
-			}
+			// Target platform is 100% EMPTY.
+			// The obstacle reported by MTR is at the exit switch or on another platform.
+			// Allow the train to glide into the empty platform smoothly!
+			stoppingCooldown = 0;
+			return -1.0;
 		}
 
 		return mtrBlockedDistance;
@@ -144,8 +164,7 @@ public abstract class VehicleMixin extends VehicleSchema {
 			final PathData stoppingPathData = (vehicleExtraData != null && stopIndex >= 0 && stopIndex < vehicleExtraData.immutablePath.size())
 					? vehicleExtraData.immutablePath.get(stopIndex) : null;
 			if (stoppingPathData != null && stoppingPathData.getDwellTime() > 0 && pathStoppingPoint > railProgress) {
-				final double physicalBlockedDistance = altplatforms$getPhysicalBlockedDistance(currentIndex, stopIndex, pathStoppingPoint, vehiclePositions);
-				if (physicalBlockedDistance < 0) {
+				if (!altplatforms$isTargetPlatformOccupied(currentIndex, vehiclePositions)) {
 					stoppingCooldown = 0;
 				}
 			}
