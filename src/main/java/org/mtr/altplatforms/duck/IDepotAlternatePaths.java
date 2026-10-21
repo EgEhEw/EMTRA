@@ -6,4 +6,5 @@ import org.mtr.libraries.it.unimi.dsi.fastutil.objects.ObjectArrayList;
 public interface IDepotAlternatePaths {
 	ObjectArrayList<AlternatePath> altplatforms$getAlternatePaths();
 	ObjectArrayList<AlternatePath> altplatforms$getAlternatePathsForPlatform(long platformId);
+	ObjectArrayList<AlternatePath> altplatforms$getAlternatePathsInvolvingPlatform(long platformId);
 }

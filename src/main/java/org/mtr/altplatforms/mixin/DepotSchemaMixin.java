@@ -33,6 +33,17 @@ public abstract class DepotSchemaMixin implements IDepotAlternatePaths {
 		return result;
 	}
 
+	@Override
+	public ObjectArrayList<AlternatePath> altplatforms$getAlternatePathsInvolvingPlatform(long platformId) {
+		final ObjectArrayList<AlternatePath> result = new ObjectArrayList<>();
+		for (final AlternatePath alt : altplatforms$alternatePaths) {
+			if (alt.primaryPlatformId == platformId || alt.alternatePlatformId == platformId) {
+				result.add(alt);
+			}
+		}
+		return result;
+	}
+
 	@Inject(method = "serializeData", at = @At("TAIL"))
 	private void altplatforms$onSerializeData(WriterBase writerBase, CallbackInfo ci) {
 		writerBase.writeDataset(altplatforms$alternatePaths, "alternatePaths");

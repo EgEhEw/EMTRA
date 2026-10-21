@@ -105,20 +105,48 @@ public abstract class SidingMixin extends SidingSchema {
 			}
 
 			if (platformIndex >= 0 && platformPathData != null) {
-				final boolean atPlatform = railProgress >= platformPathData.getStartDistance() - 1.0;
+				final boolean atPlatform = railProgress >= platformPathData.getStartDistance() - 1.0
+						&& railProgress <= platformPathData.getEndDistance() + 1.0;
 				final long arrivalTime;
 				final long departureTime;
 
-				if (atPlatform) {
+				if (atPlatform && speed < 0.0001) {
 					arrivalTime = currentMillis;
 					final long remainingDwell = Math.max(0, platformPathData.getDwellTime() - elapsedDwellTime);
 					departureTime = currentMillis + remainingDwell;
 				} else {
 					final double distanceToPlatform = Math.max(0, platformPathData.getStartDistance() - railProgress);
-					final double effSpeed = speed > 0.5 ? speed : Utilities.kilometersPerHourToMetersPerMillisecond(36);
-					final long travelMillis = (long) (distanceToPlatform / effSpeed);
-					arrivalTime = currentMillis + travelMillis;
-					departureTime = arrivalTime + platformPathData.getDwellTime();
+					if (distanceToPlatform < 0.5) {
+						// Train is essentially at the platform, just use dwell time
+						arrivalTime = currentMillis;
+						final long remainingDwell = Math.max(0, platformPathData.getDwellTime() - elapsedDwellTime);
+						departureTime = currentMillis + remainingDwell;
+					} else {
+						// Use a smooth ETA calculation based on current speed and distance
+						// Accounts for acceleration and braking phases
+						final double currentSpeedMpMs = speed; // metres per millisecond
+						final double maxSpeedMpMs = Utilities.kilometersPerHourToMetersPerMillisecond(80);
+						final double cruiseSpeedMpMs = Utilities.kilometersPerHourToMetersPerMillisecond(60);
+
+						final long travelMillis;
+						if (currentSpeedMpMs > Utilities.kilometersPerHourToMetersPerMillisecond(3)) {
+							// Train is moving — use current speed as baseline
+							// Estimate: average of current speed and a typical cruise speed
+							// This smooths out the countdown as speed changes
+							final double avgSpeed = (currentSpeedMpMs + cruiseSpeedMpMs) / 2.0;
+							final double rawTime = distanceToPlatform / avgSpeed;
+							// Add braking compensation: longer distances need less % overhead
+							final double brakingFactor = distanceToPlatform > 200 ? 1.15 : 1.25;
+							travelMillis = (long) (rawTime * brakingFactor);
+						} else {
+							// Train is stopped or barely moving — use conservative estimate
+							final double estSpeed = cruiseSpeedMpMs * 0.6;
+							travelMillis = (long) (distanceToPlatform / estSpeed);
+						}
+
+						arrivalTime = currentMillis + travelMillis;
+						departureTime = arrivalTime + platformPathData.getDwellTime();
+					}
 				}
 
 				Route route = null;
@@ -155,11 +183,21 @@ public abstract class SidingMixin extends SidingSchema {
 					activeDepartureIndicesForThisPlatform.add(vehicle.getDepartureIndex());
 				}
 			} else if ((Object) area instanceof IDepotAlternatePaths) {
+				// Check if this vehicle has been diverted to an alternate platform
+				// If querying primary platform -> mark diverted vehicle for removal
+				// If querying alternate platform -> mark diverted vehicle for removal from primary schedule
 				for (int i = 0; i < extraData.immutablePath.size(); i++) {
 					final PathData pd = extraData.immutablePath.get(i);
 					if (pd.getSavedRailBaseId() != 0 && pd.getDwellTime() > 0 && railProgress <= pd.getEndDistance() + 1.0) {
+						final long vehicleNextPlatformId = pd.getSavedRailBaseId();
 						for (final AlternatePath altPath : ((IDepotAlternatePaths) (Object) area).altplatforms$getAlternatePaths()) {
-							if (altPath.primaryPlatformId == queriedPlatformId && altPath.alternatePlatformId == pd.getSavedRailBaseId()) {
+							// Vehicle heading to alternate, but we're querying primary -> remove from primary
+							if (altPath.primaryPlatformId == queriedPlatformId && altPath.alternatePlatformId == vehicleNextPlatformId) {
+								activeDepartureIndicesDivertedAway.add(vehicle.getDepartureIndex());
+								break;
+							}
+							// Vehicle heading to primary, but we're querying alternate -> remove from alternate
+							if (altPath.alternatePlatformId == queriedPlatformId && altPath.primaryPlatformId == vehicleNextPlatformId) {
 								activeDepartureIndicesDivertedAway.add(vehicle.getDepartureIndex());
 								break;
 							}

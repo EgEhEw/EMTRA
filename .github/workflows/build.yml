@@ -88,3 +88,16 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+
+      - name: Verify and remove any sources jars from release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          echo "Verifying release $TAG assets..."
+          ASSETS=$(gh release view "$TAG" --repo ${{ github.repository }} --json assets -q '.assets[] | select(.name | endswith("-sources.jar")) | .name' 2>/dev/null || true)
+          for asset in $ASSETS; do
+            echo "Deleting unwanted asset: $asset from release $TAG..."
+            gh release delete-asset "$TAG" "$asset" --repo ${{ github.repository }} --yes || true
+          done
