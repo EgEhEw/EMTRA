@@ -9,10 +9,6 @@ In busy railway and transit networks built with Minecraft Transit Railway, stati
 ## Features
 
 - Dynamic Alternate Platform Diversion: Approaching trains inspect track reservations and real-time vehicle positions. If the primary platform or switch track is blocked, the train smoothly recalculates its path to a clear alternate platform.
-- Real-Time PIDS Synchronization: Resolves timetable desynchronization issues on stations with alternate platforms. Approaching and stopped vehicles report real-time arrival and departure estimates to PIDS screens instead of falling back to default scheduled timetables.
-- Merging and Reversal Support: Works seamlessly across continuous loops, point-to-point lines, merging junctions, and terminal stations where trains turn back.
-- Dashboard Integration: Alternate platforms can be selected directly within the MTR Dashboard Route Editor without requiring manual configuration files or server restarts.
-- Multi-Loader Support: Compatible with both Fabric and Forge on Minecraft 1.20.1 and 1.20.4.
 
 ## Supported Versions
 
