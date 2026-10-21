@@ -22,6 +22,8 @@ echo "=== 4/4: Building Forge 1.20.4 ==="
 ./gradlew :forge:build -Pminecraft_version=1.20.4 $GRADLE_OPTS
 cp forge/build/libs/EMTRA-forge-1.0.0+1.20.4.jar build/release/
 
+rm -f build/release/*-sources.jar
+
 echo "========================================="
 echo "=== ALL JARS SUCCESSFULLY GENERATED! ==="
 echo "========================================="

@@ -12,6 +12,24 @@ permissions:
   contents: write
 
 jobs:
+  cleanup-sources:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete sources jars from existing releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Scanning releases for unwanted sources jars..."
+          RELEASES=$(gh release list --repo ${{ github.repository }} --json tagName -q '.[].tagName' 2>/dev/null || true)
+          for tag in $RELEASES; do
+            echo "Checking release $tag..."
+            ASSETS=$(gh release view "$tag" --repo ${{ github.repository }} --json assets -q '.assets[] | select(.name | endswith("-sources.jar")) | .name' 2>/dev/null || true)
+            for asset in $ASSETS; do
+              echo "Deleting $asset from release $tag..."
+              gh release delete-asset "$tag" "$asset" --repo ${{ github.repository }} --yes || true
+            done
+          done
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -48,6 +66,9 @@ jobs:
           echo "Building Forge 1.20.4..."
           ./gradlew :forge:build -Pminecraft_version=1.20.4 -Dnet.minecraftforge.gradle.check.certs=false
           cp forge/build/libs/EMTRA-forge-*.jar build/release/
+
+          # Exclude all -sources.jar files from release artifacts
+          rm -f build/release/*-sources.jar
 
           echo "Generated Jars:"
           ls -lh build/release/
