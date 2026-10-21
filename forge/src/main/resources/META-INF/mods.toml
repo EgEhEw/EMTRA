@@ -1,13 +1,14 @@
 modLoader="javafml"
 loaderVersion="[47,)"
-license="MIT"
+license="GPL-3.0"
 
 [[mods]]
 modId="mtr_alt_platforms"
 version="${version}"
-displayName="MTR Alternate Platforms"
-authors="ege"
-description='''Adds alternate platform support to Minecraft Transit Railway, allowing trains to automatically divert to clear platforms.'''
+displayName="EMTRA"
+authors="EgEhEw"
+logoFile="icon.png"
+description='''EMTRA (EgEhEs MTR Addon) - Adds dynamic alternate platform routing, real-time PIDS arrival tracking, and intelligent train dispatching to Minecraft Transit Railway.'''
 
 [[dependencies.mtr_alt_platforms]]
     modId="forge"

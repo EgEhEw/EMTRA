@@ -1,33 +1,45 @@
-# MTR Alternate Platforms (Minecraft Transit Railway Addon)
+# EMTRA (EgEhEs MTR Addon)
 
-A lightweight addon mod for **Minecraft Transit Railway (MTR 4.x)** that enables trains to automatically divert to alternate platforms when their primary scheduled platform is occupied or blocked by another vehicle/signal.
+EMTRA (EgEhEs MTR Addon) is an addon mod for Minecraft Transit Railway (MTR 4.x) that introduces dynamic alternate platform routing, real-time arrival tracking for Passenger Information Display Systems (PIDS), and improved traffic management for complex rail networks.
+
+## Overview
+
+In busy railway and transit networks built with Minecraft Transit Railway, stations with shared lines or high train frequencies can experience congestion when multiple trains arrive at the same station simultaneously. EMTRA allows railway operators to configure alternate platforms for any station stop. When an approaching train detects that its primary scheduled platform is occupied or signal-blocked, it dynamically reroutes to an available alternate platform.
 
 ## Features
-- **Dynamic Platform Diversion**: If an incoming platform track is blocked by a stopped or departing train, approaching trains smoothly divert to an available alternate platform without stopping or ping-ponging.
-- **In-Game GUI Integration**: Configurable directly within MTR's dashboard route editor. Simply click on any stop in your route to select one or more alternate platforms from that station.
-- **Standalone Addon**: Works alongside official MTR without requiring patched MTR or TSC builds.
-- **Multi-Loader & Multi-Version**: Supports **Fabric** and **Forge** on Minecraft **1.20.1** and **1.20.4**.
 
----
+- Dynamic Alternate Platform Diversion: Approaching trains inspect track reservations and real-time vehicle positions. If the primary platform or switch track is blocked, the train smoothly recalculates its path to a clear alternate platform.
+- Real-Time PIDS Synchronization: Resolves timetable desynchronization issues on stations with alternate platforms. Approaching and stopped vehicles report real-time arrival and departure estimates to PIDS screens instead of falling back to default scheduled timetables.
+- Merging and Reversal Support: Works seamlessly across continuous loops, point-to-point lines, merging junctions, and terminal stations where trains turn back.
+- Dashboard Integration: Alternate platforms can be selected directly within the MTR Dashboard Route Editor without requiring manual configuration files or server restarts.
+- Multi-Loader Support: Compatible with both Fabric and Forge on Minecraft 1.20.1 and 1.20.4.
 
-## Downloads / Builds
+## Supported Versions
 
-All prebuilt jars are placed in `build/release/`:
-- `MTR-Alternate-Platforms-fabric-1.0.0+1.20.1.jar`
-- `MTR-Alternate-Platforms-fabric-1.0.0+1.20.4.jar`
-- `MTR-Alternate-Platforms-forge-1.0.0+1.20.1.jar`
-- `MTR-Alternate-Platforms-forge-1.0.0+1.20.4.jar`
+- Minecraft 1.20.1: Fabric, Forge
+- Minecraft 1.20.4: Fabric, Forge
+- Dependency: Minecraft Transit Railway (MTR) 4.0.0 or higher
 
----
+## Installation
+
+1. Install Minecraft Forge or Fabric Loader for your target Minecraft version.
+2. Install the matching version of Minecraft Transit Railway (MTR 4.x).
+3. Download the appropriate EMTRA jar file for your mod loader and Minecraft version from the Releases page.
+4. Place the EMTRA jar into your Minecraft instance `mods` directory.
 
 ## Building from Source
 
-To build all 4 jars at once:
+Prerequisites:
+- Java 17 JDK
+- Internet connection for initial dependency resolution (or offline gradle cache)
+
+To build all loader and version variants at once:
 ```bash
 ./build_all.sh
 ```
 
-Or build individual loaders and Minecraft versions:
+To build individual variants:
+
 ```bash
 # Fabric 1.20.1
 ./gradlew :fabric:build -Pminecraft_version=1.20.1
@@ -42,7 +54,8 @@ Or build individual loaders and Minecraft versions:
 ./gradlew :forge:build -Pminecraft_version=1.20.4
 ```
 
----
+Compiled jar files are placed in the `build/release/` directory.
 
 ## License
-MIT License.
+
+This project is licensed under the GNU General Public License v3.0 (GPL-3.0). See the LICENSE file for details.

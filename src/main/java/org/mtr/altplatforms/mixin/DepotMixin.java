@@ -77,8 +77,7 @@ public abstract class DepotMixin extends DepotSchema {
 	@Inject(method = "writePathCache", at = @At("HEAD"))
 	private void altplatforms$onWritePathCacheHead(CallbackInfo ci) {
 		if ((Object) this instanceof IDepotAlternatePaths) {
-			final ObjectArrayList<AlternatePath> list = ((IDepotAlternatePaths) (Object) this).altplatforms$getAlternatePaths();
-			if (list.isEmpty() && !path.isEmpty()) {
+			if (!path.isEmpty()) {
 				altplatforms$generateAlternatePaths();
 			}
 		}
@@ -110,7 +109,7 @@ public abstract class DepotMixin extends DepotSchema {
 				final RoutePlatformData rpd = route.getRoutePlatforms().get(i);
 				final long platformId = ((Object) rpd instanceof IAltRoutePlatformData) ? ((IAltRoutePlatformData) (Object) rpd).altplatforms$getPlatformId() : 0;
 				final Platform platform = rpd.platform != null ? rpd.platform : (platformId != 0 ? data.platformIdMap.get(platformId) : null);
-				if (platform != null && platform.getId() != previousPlatformId) {
+				if (platform != null) {
 					final ObjectArrayList<Platform> altList = new ObjectArrayList<>();
 					if ((Object) rpd instanceof IAltRoutePlatformData) {
 						final LongArrayList altIds = ((IAltRoutePlatformData) (Object) rpd).altplatforms$getAlternatePlatformIds();
@@ -121,8 +120,16 @@ public abstract class DepotMixin extends DepotSchema {
 							}
 						}
 					}
-					stops.add(new PlatformStop(platform, altList));
-					previousPlatformId = platform.getId();
+					if (platform.getId() == previousPlatformId && !stops.isEmpty()) {
+						for (final Platform p : altList) {
+							if (!stops.get(stops.size() - 1).alternatePlatforms.contains(p)) {
+								stops.get(stops.size() - 1).alternatePlatforms.add(p);
+							}
+						}
+					} else {
+						stops.add(new PlatformStop(platform, altList));
+						previousPlatformId = platform.getId();
+					}
 				}
 			}
 		}
@@ -169,12 +176,12 @@ public abstract class DepotMixin extends DepotSchema {
 			if (i == 0) {
 				for (final Siding siding : savedRails) {
 					for (final Platform altPlatform : details.alternatePlatforms) {
-						final ObjectArrayList<PathData> pathFromSiding = altplatforms$findDirectPath(data, siding, altPlatform, -1, cruisingAltitude, 1000);
+						final ObjectArrayList<PathData> pathFromSiding = altplatforms$findDirectPath(data, siding, altPlatform, -1, cruisingAltitude, 5000);
 						if (pathFromSiding != null && pathFromSiding.size() >= 2) {
 							final ObjectArrayList<PathData> altFromSiding = new ObjectArrayList<>(pathFromSiding);
 							final Platform nextForSiding = stops.size() > 1 ? stops.get(1).platform : null;
 							if (nextForSiding != null) {
-								final ObjectArrayList<PathData> pathNext = altplatforms$findDirectPath(data, altPlatform, nextForSiding, 0, cruisingAltitude, 1000);
+								final ObjectArrayList<PathData> pathNext = altplatforms$findDirectPath(data, altPlatform, nextForSiding, 0, cruisingAltitude, 5000);
 								if (pathNext != null && pathNext.size() >= 2) {
 									if (SidingPathFinder.overlappingPaths(altFromSiding, pathNext)) {
 										pathNext.remove(0);
@@ -201,7 +208,7 @@ public abstract class DepotMixin extends DepotSchema {
 		final ObjectArrayList<PathData> altPathSegment = new ObjectArrayList<>();
 		boolean success = true;
 
-		final ObjectArrayList<PathData> path1 = altplatforms$findDirectPath(data, prevPlatform, toPlatform, Math.max(0, stopIndex - 1), cruisingAltitude, 1000);
+		final ObjectArrayList<PathData> path1 = altplatforms$findDirectPath(data, prevPlatform, toPlatform, Math.max(0, stopIndex - 1), cruisingAltitude, 5000);
 		if (path1 != null && path1.size() >= 2) {
 			altPathSegment.addAll(path1);
 		} else {
@@ -209,7 +216,7 @@ public abstract class DepotMixin extends DepotSchema {
 		}
 
 		if (success && nextPlatform != null) {
-			final ObjectArrayList<PathData> path2 = altplatforms$findDirectPath(data, toPlatform, nextPlatform, stopIndex, cruisingAltitude, 1000);
+			final ObjectArrayList<PathData> path2 = altplatforms$findDirectPath(data, toPlatform, nextPlatform, stopIndex, cruisingAltitude, 5000);
 			if (path2 != null && path2.size() >= 2) {
 				if (!altPathSegment.isEmpty() && SidingPathFinder.overlappingPaths(altPathSegment, path2)) {
 					path2.remove(0);

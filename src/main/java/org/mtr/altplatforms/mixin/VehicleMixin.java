@@ -2,6 +2,7 @@ package org.mtr.altplatforms.mixin;
 
 import org.mtr.altplatforms.data.AlternatePath;
 import org.mtr.altplatforms.duck.IDepotAlternatePaths;
+import org.mtr.altplatforms.duck.IVehicle;
 import org.mtr.altplatforms.duck.IVehicleExtraData;
 import org.mtr.core.Main;
 import org.mtr.core.data.*;
@@ -23,7 +24,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import javax.annotation.Nullable;
 
 @Mixin(value = Vehicle.class, remap = false)
-public abstract class VehicleMixin extends VehicleSchema {
+public abstract class VehicleMixin extends VehicleSchema implements IVehicle {
 
 	protected VehicleMixin(TransportMode transportMode, Data data) {
 		super(transportMode, data);
@@ -53,6 +54,21 @@ public abstract class VehicleMixin extends VehicleSchema {
 
 	@Shadow
 	abstract double railBlockedDistance(int currentIndex, double railProgress, double checkDistance, @Nullable ObjectArrayList<Object2ObjectAVLTreeMap<Position, Object2ObjectAVLTreeMap<Position, VehiclePosition>>> vehiclePositions, boolean checkSignals, boolean isOccupied);
+
+	@Override
+	public double altplatforms$getRailProgress() {
+		return railProgress;
+	}
+
+	@Override
+	public double altplatforms$getSpeed() {
+		return speed;
+	}
+
+	@Override
+	public long altplatforms$getElapsedDwellTime() {
+		return elapsedDwellTime;
+	}
 
 	@Unique
 	private long altplatforms$lastDiversionTime = 0;
@@ -102,7 +118,10 @@ public abstract class VehicleMixin extends VehicleSchema {
 
 			if (vehiclePositions != null) {
 				for (int p = 0; p < 2; p++) {
-					final VehiclePosition vp = Data.tryGet(vehiclePositions.get(p), pd.getOrderedPosition1(), pd.getOrderedPosition2());
+					VehiclePosition vp = Data.tryGet(vehiclePositions.get(p), pd.getOrderedPosition1(), pd.getOrderedPosition2());
+					if (vp == null) {
+						vp = Data.tryGet(vehiclePositions.get(p), pd.getOrderedPosition2(), pd.getOrderedPosition1());
+					}
 					if (vp != null && vp.getClosestOverlap(0, pd.getRailLength(), pd.reversePositions, id) >= 0) {
 						return true;
 					}
@@ -268,7 +287,10 @@ public abstract class VehicleMixin extends VehicleSchema {
 					break;
 				}
 				for (int p = 0; p < 2; p++) {
-					final VehiclePosition vp = Data.tryGet(vehiclePositions.get(p), curPd.getOrderedPosition1(), curPd.getOrderedPosition2());
+					VehiclePosition vp = Data.tryGet(vehiclePositions.get(p), curPd.getOrderedPosition1(), curPd.getOrderedPosition2());
+					if (vp == null) {
+						vp = Data.tryGet(vehiclePositions.get(p), curPd.getOrderedPosition2(), curPd.getOrderedPosition1());
+					}
 					if (vp != null && vp.getClosestOverlap(0, curPd.getRailLength(), curPd.reversePositions, id) >= 0) {
 						currentBranchBlocked = true;
 						break;
@@ -320,7 +342,7 @@ public abstract class VehicleMixin extends VehicleSchema {
 			}
 
 			if (mergeCurrentIndex < 0 && duckExtraData.altplatforms$getRepeatIndex2() > 0) {
-				for (int i = (int) duckExtraData.altplatforms$getRepeatIndex1(); i <= upcomingPlatformIndex; i++) {
+				for (int i = 0; i <= upcomingPlatformIndex; i++) {
 					final PathData curPd = vehicleExtraData.immutablePath.get(i);
 					for (int j = searchAltStart; j < altPath.alternatePath.size(); j++) {
 						final PathData altPd = altPath.alternatePath.get(j);
@@ -337,6 +359,22 @@ public abstract class VehicleMixin extends VehicleSchema {
 				}
 			}
 
+			if (mergeCurrentIndex < 0) {
+				boolean hasSubsequentPlatforms = false;
+				for (int i = upcomingPlatformEndIndex + 1; i < vehicleExtraData.immutablePath.size(); i++) {
+					final PathData pd = vehicleExtraData.immutablePath.get(i);
+					if (pd.getSavedRailBaseId() != 0 && pd.getDwellTime() > 0) {
+						hasSubsequentPlatforms = true;
+						break;
+					}
+				}
+
+				if (!hasSubsequentPlatforms && altPlatformEndIndex >= 0) {
+					mergeCurrentIndex = vehicleExtraData.immutablePath.size();
+					mergeAltIndex = altPlatformEndIndex + 1;
+				}
+			}
+
 			if (mergeCurrentIndex < 0 || mergeAltIndex < 0) {
 				continue;
 			}
@@ -350,7 +388,10 @@ public abstract class VehicleMixin extends VehicleSchema {
 					break;
 				}
 				for (int p = 0; p < 2; p++) {
-					final VehiclePosition vp = Data.tryGet(vehiclePositions.get(p), altPd.getOrderedPosition1(), altPd.getOrderedPosition2());
+					VehiclePosition vp = Data.tryGet(vehiclePositions.get(p), altPd.getOrderedPosition1(), altPd.getOrderedPosition2());
+					if (vp == null) {
+						vp = Data.tryGet(vehiclePositions.get(p), altPd.getOrderedPosition2(), altPd.getOrderedPosition1());
+					}
 					if (vp != null && vp.getClosestOverlap(0, altPd.getRailLength(), altPd.reversePositions, id) >= 0) {
 						altBlocked = true;
 						break;
