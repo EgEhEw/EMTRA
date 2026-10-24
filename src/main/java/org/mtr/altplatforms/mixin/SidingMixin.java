@@ -7,11 +7,12 @@ import org.mtr.core.data.*;
 import org.mtr.core.generated.data.SidingSchema;
 import org.mtr.core.operation.ArrivalResponse;
 import org.mtr.core.serializer.ReaderBase;
-import org.mtr.core.tool.Utilities;
+import org.mtr.libraries.it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import org.mtr.libraries.it.unimi.dsi.fastutil.longs.Long2ObjectAVLTreeMap;
 import org.mtr.libraries.it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import org.mtr.libraries.it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import org.mtr.libraries.it.unimi.dsi.fastutil.objects.ObjectArraySet;
+import org.mtr.libraries.it.unimi.dsi.fastutil.objects.ObjectImmutableList;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -40,16 +41,18 @@ public abstract class SidingMixin extends SidingSchema {
 	@Final
 	private Long2ObjectAVLTreeMap<ObjectArraySet<Trip.StopTime>> platformTripStopTimes;
 
-	@Shadow
-	public abstract ObjectArrayList<VehicleCar> getVehicleCars();
-
 	@Inject(method = "generatePathDistancesAndTimeSegments", at = @At("TAIL"))
 	private void altplatforms$onGeneratePathDistancesAndTimeSegments(CallbackInfo ci) {
 		if ((Object) area instanceof IDepotAlternatePaths) {
 			for (final AlternatePath altPath : ((IDepotAlternatePaths) (Object) area).altplatforms$getAlternatePaths()) {
 				final ObjectArraySet<Trip.StopTime> primaryTimes = platformTripStopTimes.get(altPath.primaryPlatformId);
-				if (primaryTimes != null && !platformTripStopTimes.containsKey(altPath.alternatePlatformId)) {
-					platformTripStopTimes.put(altPath.alternatePlatformId, new ObjectArraySet<>(primaryTimes));
+				if (primaryTimes != null) {
+					ObjectArraySet<Trip.StopTime> altTimes = platformTripStopTimes.get(altPath.alternatePlatformId);
+					if (altTimes == null) {
+						altTimes = new ObjectArraySet<>();
+						platformTripStopTimes.put(altPath.alternatePlatformId, altTimes);
+					}
+					altTimes.addAll(primaryTimes);
 				}
 			}
 		}
@@ -58,13 +61,17 @@ public abstract class SidingMixin extends SidingSchema {
 	@Inject(method = "getArrivals", at = @At("HEAD"))
 	private void altplatforms$onGetArrivalsHead(long currentMillis, Platform platform, long count, ObjectArrayList<ArrivalResponse> arrivalResponseList, CallbackInfo ci) {
 		final long platformId = platform.getId();
-		if (!platformTripStopTimes.containsKey(platformId) && (Object) area instanceof IDepotAlternatePaths) {
+		if ((Object) area instanceof IDepotAlternatePaths) {
 			for (final AlternatePath altPath : ((IDepotAlternatePaths) (Object) area).altplatforms$getAlternatePaths()) {
 				if (altPath.alternatePlatformId == platformId) {
 					final ObjectArraySet<Trip.StopTime> primaryTimes = platformTripStopTimes.get(altPath.primaryPlatformId);
 					if (primaryTimes != null) {
-						platformTripStopTimes.put(platformId, new ObjectArraySet<>(primaryTimes));
-						break;
+						ObjectArraySet<Trip.StopTime> altTimes = platformTripStopTimes.get(platformId);
+						if (altTimes == null) {
+							altTimes = new ObjectArraySet<>();
+							platformTripStopTimes.put(platformId, altTimes);
+						}
+						altTimes.addAll(primaryTimes);
 					}
 				}
 			}
@@ -73,145 +80,89 @@ public abstract class SidingMixin extends SidingSchema {
 
 	@Inject(method = "getArrivals", at = @At("TAIL"))
 	private void altplatforms$onGetArrivalsTail(long currentMillis, Platform platform, long count, ObjectArrayList<ArrivalResponse> arrivalResponseList, CallbackInfo ci) {
+		if (!((Object) area instanceof IDepotAlternatePaths)) {
+			return;
+		}
+
 		final long queriedPlatformId = platform.getId();
-		final LongOpenHashSet activeDepartureIndicesForThisPlatform = new LongOpenHashSet();
-		final LongOpenHashSet activeDepartureIndicesDivertedAway = new LongOpenHashSet();
-		final ObjectArrayList<ArrivalResponse> realtimeArrivals = new ObjectArrayList<>();
+		final IDepotAlternatePaths depot = (IDepotAlternatePaths) (Object) area;
+		final ObjectArrayList<AlternatePath> allAltPaths = depot.altplatforms$getAlternatePaths();
+		if (allAltPaths.isEmpty()) {
+			return;
+		}
+
+		// 1. Determine if queriedPlatformId is a primary platform, an alternate platform, or neither.
+		final LongOpenHashSet associatedAlternatePlatformIds = new LongOpenHashSet();
+		final LongOpenHashSet associatedPrimaryPlatformIds = new LongOpenHashSet();
+
+		for (final AlternatePath altPath : allAltPaths) {
+			if (altPath.primaryPlatformId == queriedPlatformId) {
+				associatedAlternatePlatformIds.add(altPath.alternatePlatformId);
+			}
+			if (altPath.alternatePlatformId == queriedPlatformId) {
+				associatedPrimaryPlatformIds.add(altPath.primaryPlatformId);
+			}
+		}
+
+		final boolean isPrimary = !associatedAlternatePlatformIds.isEmpty();
+		final boolean isAlternate = !associatedPrimaryPlatformIds.isEmpty();
+
+		if (!isPrimary && !isAlternate) {
+			return;
+		}
+
+		// 2. Identify the active target platform for each active vehicle on route.
+		// Key: departureIndex -> target platform ID for this station
+		final Long2LongOpenHashMap vehicleTargetPlatformForThisStation = new Long2LongOpenHashMap();
 
 		for (final Vehicle vehicle : vehicles) {
-			if (!vehicle.getIsOnRoute()) {
-				continue;
-			}
-			final VehicleExtraData extraData = vehicle.vehicleExtraData;
-			if (extraData == null || extraData.immutablePath.isEmpty()) {
+			if (!vehicle.getIsOnRoute() || vehicle.vehicleExtraData == null || vehicle.vehicleExtraData.immutablePath.isEmpty()) {
 				continue;
 			}
 
 			final double railProgress = ((IVehicle) vehicle).altplatforms$getRailProgress();
-			final double speed = ((IVehicle) vehicle).altplatforms$getSpeed();
-			final long elapsedDwellTime = ((IVehicle) vehicle).altplatforms$getElapsedDwellTime();
+			final ObjectImmutableList<PathData> path = vehicle.vehicleExtraData.immutablePath;
 
-			int platformIndex = -1;
-			PathData platformPathData = null;
-			for (int i = 0; i < extraData.immutablePath.size(); i++) {
-				final PathData pd = extraData.immutablePath.get(i);
-				if (pd.getSavedRailBaseId() == queriedPlatformId && pd.getDwellTime() > 0) {
-					if (railProgress <= pd.getEndDistance() + 1.0) {
-						platformIndex = i;
-						platformPathData = pd;
-						break;
-					}
-				}
-			}
-
-			if (platformIndex >= 0 && platformPathData != null) {
-				final boolean atPlatform = railProgress >= platformPathData.getStartDistance() - 1.0
-						&& railProgress <= platformPathData.getEndDistance() + 1.0;
-				final long arrivalTime;
-				final long departureTime;
-
-				if (atPlatform && speed < 0.0001) {
-					arrivalTime = currentMillis;
-					final long remainingDwell = Math.max(0, platformPathData.getDwellTime() - elapsedDwellTime);
-					departureTime = currentMillis + remainingDwell;
-				} else {
-					final double distanceToPlatform = Math.max(0, platformPathData.getStartDistance() - railProgress);
-					if (distanceToPlatform < 0.5) {
-						// Train is essentially at the platform, just use dwell time
-						arrivalTime = currentMillis;
-						final long remainingDwell = Math.max(0, platformPathData.getDwellTime() - elapsedDwellTime);
-						departureTime = currentMillis + remainingDwell;
-					} else {
-						// Use a smooth ETA calculation based on current speed and distance
-						// Accounts for acceleration and braking phases
-						final double currentSpeedMpMs = speed; // metres per millisecond
-						final double maxSpeedMpMs = Utilities.kilometersPerHourToMetersPerMillisecond(80);
-						final double cruiseSpeedMpMs = Utilities.kilometersPerHourToMetersPerMillisecond(60);
-
-						final long travelMillis;
-						if (currentSpeedMpMs > Utilities.kilometersPerHourToMetersPerMillisecond(3)) {
-							// Train is moving — use current speed as baseline
-							// Estimate: average of current speed and a typical cruise speed
-							// This smooths out the countdown as speed changes
-							final double avgSpeed = (currentSpeedMpMs + cruiseSpeedMpMs) / 2.0;
-							final double rawTime = distanceToPlatform / avgSpeed;
-							// Add braking compensation: longer distances need less % overhead
-							final double brakingFactor = distanceToPlatform > 200 ? 1.15 : 1.25;
-							travelMillis = (long) (rawTime * brakingFactor);
-						} else {
-							// Train is stopped or barely moving — use conservative estimate
-							final double estSpeed = cruiseSpeedMpMs * 0.6;
-							travelMillis = (long) (distanceToPlatform / estSpeed);
-						}
-
-						arrivalTime = currentMillis + travelMillis;
-						departureTime = arrivalTime + platformPathData.getDwellTime();
-					}
-				}
-
-				Route route = null;
-				if (area != null) {
-					for (final Route r : area.routes) {
-						if (r.getId() == extraData.getThisRouteId()) {
-							route = r;
-							break;
-						}
-					}
-					if (route == null && !area.routes.isEmpty()) {
-						route = area.routes.get(0);
-					}
-				}
-				if (route == null && data != null && !data.routes.isEmpty()) {
-					route = data.routeIdMap.get(extraData.getThisRouteId());
-				}
-
-				if (route != null) {
-					final String destination = !extraData.getThisRouteDestination().isEmpty() ? extraData.getThisRouteDestination() : route.getDestination(extraData.getStopIndex());
-					final ArrivalResponse resp = new ArrivalResponse(
-							destination,
-							arrivalTime,
-							departureTime,
-							0,
-							true,
-							vehicle.getDepartureIndex(),
-							extraData.getStopIndex(),
-							route,
-							platform
-					);
-					resp.setCarDetails(getVehicleCars());
-					realtimeArrivals.add(resp);
-					activeDepartureIndicesForThisPlatform.add(vehicle.getDepartureIndex());
-				}
-			} else if ((Object) area instanceof IDepotAlternatePaths) {
-				// Check if this vehicle has been diverted to an alternate platform
-				// If querying primary platform -> mark diverted vehicle for removal
-				// If querying alternate platform -> mark diverted vehicle for removal from primary schedule
-				for (int i = 0; i < extraData.immutablePath.size(); i++) {
-					final PathData pd = extraData.immutablePath.get(i);
-					if (pd.getSavedRailBaseId() != 0 && pd.getDwellTime() > 0 && railProgress <= pd.getEndDistance() + 1.0) {
-						final long vehicleNextPlatformId = pd.getSavedRailBaseId();
-						for (final AlternatePath altPath : ((IDepotAlternatePaths) (Object) area).altplatforms$getAlternatePaths()) {
-							// Vehicle heading to alternate, but we're querying primary -> remove from primary
-							if (altPath.primaryPlatformId == queriedPlatformId && altPath.alternatePlatformId == vehicleNextPlatformId) {
-								activeDepartureIndicesDivertedAway.add(vehicle.getDepartureIndex());
-								break;
-							}
-							// Vehicle heading to primary, but we're querying alternate -> remove from alternate
-							if (altPath.alternatePlatformId == queriedPlatformId && altPath.primaryPlatformId == vehicleNextPlatformId) {
-								activeDepartureIndicesDivertedAway.add(vehicle.getDepartureIndex());
-								break;
-							}
-						}
+			// Search forward from current rail progress to find the upcoming platform for this station
+			for (int i = 0; i < path.size(); i++) {
+				final PathData pd = path.get(i);
+				if (pd.getSavedRailBaseId() != 0 && pd.getDwellTime() > 0 && railProgress <= pd.getEndDistance() + 1.0) {
+					final long pid = pd.getSavedRailBaseId();
+					if (pid == queriedPlatformId || associatedAlternatePlatformIds.contains(pid) || associatedPrimaryPlatformIds.contains(pid)) {
+						vehicleTargetPlatformForThisStation.put(vehicle.getDepartureIndex(), pid);
 						break;
 					}
 				}
 			}
 		}
 
-		arrivalResponseList.removeIf(resp -> activeDepartureIndicesDivertedAway.contains(resp.getDepartureIndex()) || activeDepartureIndicesForThisPlatform.contains(resp.getDepartureIndex()));
-		arrivalResponseList.addAll(realtimeArrivals);
-		Collections.sort(arrivalResponseList);
+		// 3. Filter arrivalResponseList according to platform role:
+		if (isAlternate) {
+			// On an ALTERNATE platform:
+			// - Timetable departures (!resp.getRealtime()) DO NOT belong here (timetable trains are scheduled to the primary platform).
+			// - Active trains ONLY belong here if they have actually diverted to this alternate platform.
+			arrivalResponseList.removeIf(resp -> {
+				if (!resp.getRealtime()) {
+					return true;
+				}
+				final long targetPlatform = vehicleTargetPlatformForThisStation.getOrDefault(resp.getDepartureIndex(), 0L);
+				return targetPlatform != queriedPlatformId;
+			});
+		} else if (isPrimary) {
+			// On a PRIMARY platform:
+			// - Timetable departures (!resp.getRealtime()) stay (they are scheduled here).
+			// - Active trains stay UNLESS they have diverted away to an associated alternate platform.
+			arrivalResponseList.removeIf(resp -> {
+				if (!resp.getRealtime()) {
+					return false;
+				}
+				final long targetPlatform = vehicleTargetPlatformForThisStation.getOrDefault(resp.getDepartureIndex(), 0L);
+				return targetPlatform != 0 && targetPlatform != queriedPlatformId && associatedAlternatePlatformIds.contains(targetPlatform);
+			});
+		}
 
+		// 4. Ensure list stays sorted and limited to count
+		Collections.sort(arrivalResponseList);
 		while (arrivalResponseList.size() > count) {
 			arrivalResponseList.remove(arrivalResponseList.size() - 1);
 		}
