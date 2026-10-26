@@ -2,6 +2,7 @@ package org.mtr.altplatforms.mixin;
 
 import org.mtr.altplatforms.data.AlternatePath;
 import org.mtr.altplatforms.duck.IDepotAlternatePaths;
+import org.mtr.altplatforms.duck.ISidingVehicles;
 import org.mtr.altplatforms.duck.IVehicle;
 import org.mtr.core.data.*;
 import org.mtr.core.generated.data.SidingSchema;
@@ -23,7 +24,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.Collections;
 
 @Mixin(value = Siding.class, remap = false)
-public abstract class SidingMixin extends SidingSchema {
+public abstract class SidingMixin extends SidingSchema implements ISidingVehicles {
 
 	protected SidingMixin(double railLength, Position position1, Position position2, TransportMode transportMode, Data data) {
 		super(railLength, position1, position2, transportMode, data);
@@ -36,6 +37,11 @@ public abstract class SidingMixin extends SidingSchema {
 	@Shadow
 	@Final
 	private ObjectArraySet<Vehicle> vehicles;
+
+	@Override
+	public ObjectArraySet<Vehicle> altplatforms$getVehicles() {
+		return vehicles;
+	}
 
 	@Shadow
 	@Final

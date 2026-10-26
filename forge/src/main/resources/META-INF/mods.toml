@@ -1,6 +1,6 @@
 modLoader="javafml"
 loaderVersion="[47,)"
-license="GPL-3.0"
+license="MIT"
 
 [[mods]]
 modId="mtr_alt_platforms"
