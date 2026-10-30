@@ -193,6 +193,61 @@ public abstract class DepotMixin extends DepotSchema {
 							altPaths.add(new AlternatePath(0, details.platform.getId(), altPlatform.getId(), altFromSiding));
 							Main.LOGGER.info("Generated alternate path from siding {} for stop 0 (platform {}) via alternate platform {}", siding.getName(), details.platform.getId(), altPlatform.getId());
 						}
+
+						final ObjectArrayList<PathData> pathFromSidingPrimary = altplatforms$findDirectPath(data, siding, details.platform, -1, cruisingAltitude, 5000);
+						if (pathFromSidingPrimary != null && pathFromSidingPrimary.size() >= 2) {
+							final ObjectArrayList<PathData> primaryFromSiding = new ObjectArrayList<>(pathFromSidingPrimary);
+							final Platform nextForSiding = stops.size() > 1 ? stops.get(1).platform : null;
+							if (nextForSiding != null) {
+								final ObjectArrayList<PathData> pathNext = altplatforms$findDirectPath(data, details.platform, nextForSiding, 0, cruisingAltitude, 5000);
+								if (pathNext != null && pathNext.size() >= 2) {
+									if (SidingPathFinder.overlappingPaths(primaryFromSiding, pathNext)) {
+										pathNext.remove(0);
+									}
+									primaryFromSiding.addAll(pathNext);
+								}
+							}
+							PathData.writePathCache(primaryFromSiding, data, transportMode);
+							altPaths.add(new AlternatePath(0, altPlatform.getId(), details.platform.getId(), primaryFromSiding));
+						}
+					}
+				}
+			}
+
+			if (i == stops.size() - 1 && !repeatInfinitely) {
+				final Platform prevPlatformForTerminal = i > 0 ? stops.get(i - 1).platform : null;
+				if (prevPlatformForTerminal != null) {
+					for (final Siding siding : savedRails) {
+						for (final Platform altPlatform : details.alternatePlatforms) {
+							final ObjectArrayList<PathData> pathToAlt = altplatforms$findDirectPath(data, prevPlatformForTerminal, altPlatform, i - 1, cruisingAltitude, 5000);
+							if (pathToAlt != null && pathToAlt.size() >= 2) {
+								final ObjectArrayList<PathData> altToSiding = new ObjectArrayList<>(pathToAlt);
+								final ObjectArrayList<PathData> pathToSiding = altplatforms$findDirectPath(data, altPlatform, siding, i, cruisingAltitude, 5000);
+								if (pathToSiding != null && pathToSiding.size() >= 2) {
+									if (SidingPathFinder.overlappingPaths(altToSiding, pathToSiding)) {
+										pathToSiding.remove(0);
+									}
+									altToSiding.addAll(pathToSiding);
+									PathData.writePathCache(altToSiding, data, transportMode);
+									altPaths.add(new AlternatePath(i, details.platform.getId(), altPlatform.getId(), altToSiding));
+									Main.LOGGER.info("Generated alternate path to siding {} for terminal stop {} (platform {}) via alternate platform {}", siding.getName(), i, details.platform.getId(), altPlatform.getId());
+								}
+							}
+
+							final ObjectArrayList<PathData> pathToPrimary = altplatforms$findDirectPath(data, prevPlatformForTerminal, details.platform, i - 1, cruisingAltitude, 5000);
+							if (pathToPrimary != null && pathToPrimary.size() >= 2) {
+								final ObjectArrayList<PathData> primaryToSiding = new ObjectArrayList<>(pathToPrimary);
+								final ObjectArrayList<PathData> pathToSiding = altplatforms$findDirectPath(data, details.platform, siding, i, cruisingAltitude, 5000);
+								if (pathToSiding != null && pathToSiding.size() >= 2) {
+									if (SidingPathFinder.overlappingPaths(primaryToSiding, pathToSiding)) {
+										pathToSiding.remove(0);
+									}
+									primaryToSiding.addAll(pathToSiding);
+									PathData.writePathCache(primaryToSiding, data, transportMode);
+									altPaths.add(new AlternatePath(i, altPlatform.getId(), details.platform.getId(), primaryToSiding));
+								}
+							}
+						}
 					}
 				}
 			}
@@ -201,7 +256,7 @@ public abstract class DepotMixin extends DepotSchema {
 
 	@Unique
 	private void altplatforms$generateSingleAlternatePath(ObjectArrayList<AlternatePath> altPaths, int stopIndex, Platform prevPlatform, Platform fromPlatform, Platform toPlatform, Platform nextPlatform) {
-		if (prevPlatform == null) {
+		if (prevPlatform == null || nextPlatform == null) {
 			return;
 		}
 

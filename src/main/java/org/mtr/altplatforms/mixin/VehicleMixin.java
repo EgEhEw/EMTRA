@@ -192,10 +192,11 @@ public abstract class VehicleMixin extends VehicleSchema implements IVehicle {
 			boolean checkSignals,
 			boolean isOccupied
 	) {
+		final double pathStoppingPoint = getPathStoppingPoint();
 		final int stopIndex = (int) nextStoppingIndexAto;
 		final PathData stoppingPathData = (vehicleExtraData != null && stopIndex >= 0 && stopIndex < vehicleExtraData.immutablePath.size())
 				? vehicleExtraData.immutablePath.get(stopIndex) : null;
-		final boolean isApproachingPlatform = stoppingPathData != null && stoppingPathData.getDwellTime() > 0 && railProgress < stoppingPathData.getStartDistance();
+		final boolean isApproachingPlatform = stoppingPathData != null && stoppingPathData.getDwellTime() > 1 && railProgress < pathStoppingPoint - 0.01;
 
 		final double mtrBlockedDistance = railBlockedDistance(currentIndex, railProgress, checkDistance, vehiclePositions, checkSignals, isOccupied);
 
@@ -227,10 +228,11 @@ public abstract class VehicleMixin extends VehicleSchema implements IVehicle {
 		altplatforms$checkAlternatePlatformDiversion(currentIndex, vehiclePositions);
 
 		if (stoppingCooldown > 0) {
+			final double pathStoppingPoint = getPathStoppingPoint();
 			final int stopIndex = (int) nextStoppingIndexAto;
 			final PathData stoppingPathData = (vehicleExtraData != null && stopIndex >= 0 && stopIndex < vehicleExtraData.immutablePath.size())
 					? vehicleExtraData.immutablePath.get(stopIndex) : null;
-			final boolean isApproachingPlatform = stoppingPathData != null && stoppingPathData.getDwellTime() > 0 && railProgress < stoppingPathData.getStartDistance();
+			final boolean isApproachingPlatform = stoppingPathData != null && stoppingPathData.getDwellTime() > 1 && railProgress < pathStoppingPoint - 0.01;
 			if (isApproachingPlatform) {
 				if (!altplatforms$isTargetPlatformOccupied(currentIndex, vehiclePositions)) {
 					stoppingCooldown = 0;
@@ -423,8 +425,10 @@ public abstract class VehicleMixin extends VehicleSchema implements IVehicle {
 				}
 
 				if (!hasSubsequentPlatforms && altPlatformEndIndex >= 0) {
-					mergeCurrentIndex = vehicleExtraData.immutablePath.size();
-					mergeAltIndex = altPlatformEndIndex + 1;
+					if (altPath.alternatePath.size() > altPlatformEndIndex + 1) {
+						mergeCurrentIndex = vehicleExtraData.immutablePath.size();
+						mergeAltIndex = altPath.alternatePath.size();
+					}
 				}
 			}
 
