@@ -16,13 +16,6 @@ In busy railway and transit networks built with Minecraft Transit Railway, stati
 - Minecraft 1.20.4: Fabric, Forge
 - Dependency: Minecraft Transit Railway (MTR) 4.0.0 or higher
 
-## Installation
-
-1. Install Minecraft Forge or Fabric Loader for your target Minecraft version.
-2. Install the matching version of Minecraft Transit Railway (MTR 4.x).
-3. Download the appropriate EMTRA jar file for your mod loader and Minecraft version from the Releases page.
-4. Place the EMTRA jar into your Minecraft instance `mods` directory.
-
 ## Building from Source
 
 Prerequisites:
