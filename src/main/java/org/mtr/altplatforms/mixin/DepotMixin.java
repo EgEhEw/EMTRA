@@ -1,6 +1,7 @@
 package org.mtr.altplatforms.mixin;
 
 import org.mtr.altplatforms.data.AlternatePath;
+import org.mtr.altplatforms.compat.MagicMtrCompat;
 import org.mtr.altplatforms.data.PlatformStop;
 import org.mtr.altplatforms.duck.IAltRoutePlatformData;
 import org.mtr.altplatforms.duck.IDepotAlternatePaths;
@@ -111,7 +112,13 @@ public abstract class DepotMixin extends DepotSchema {
 				final Platform platform = rpd.platform != null ? rpd.platform : (platformId != 0 ? data.platformIdMap.get(platformId) : null);
 				if (platform != null) {
 					final ObjectArrayList<Platform> altList = new ObjectArrayList<>();
-					if ((Object) rpd instanceof IAltRoutePlatformData) {
+					for (final long alternateId : MagicMtrCompat.getAlternatePlatformIds(route, platform)) {
+						final Platform alternate = data.platformIdMap.get(alternateId);
+						if (alternate != null && alternate.getId() != platform.getId() && !altList.contains(alternate)) {
+							altList.add(alternate);
+						}
+					}
+					if (!MagicMtrCompat.isPresent() && (Object) rpd instanceof IAltRoutePlatformData) {
 						final LongArrayList altIds = ((IAltRoutePlatformData) (Object) rpd).altplatforms$getAlternatePlatformIds();
 						for (int j = 0; j < altIds.size(); j++) {
 							final Platform altPlatform = data.platformIdMap.get(altIds.getLong(j));
@@ -263,7 +270,7 @@ public abstract class DepotMixin extends DepotSchema {
 		final ObjectArrayList<PathData> altPathSegment = new ObjectArrayList<>();
 		boolean success = true;
 
-		final ObjectArrayList<PathData> path1 = altplatforms$findDirectPath(data, prevPlatform, toPlatform, Math.max(0, stopIndex - 1), cruisingAltitude, 5000);
+		final ObjectArrayList<PathData> path1 = altplatforms$findDirectPath(data, prevPlatform, toPlatform, stopIndex - 1, cruisingAltitude, 5000);
 		if (path1 != null && path1.size() >= 2) {
 			altPathSegment.addAll(path1);
 		} else {

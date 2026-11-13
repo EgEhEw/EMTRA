@@ -9,6 +9,15 @@ In busy railway and transit networks built with Minecraft Transit Railway, stati
 ## Features
 
 - Dynamic Alternate Platform Diversion: Approaching trains inspect track reservations and real-time vehicle positions. If the primary platform or switch track is blocked, the train smoothly recalculates its path to a clear alternate platform.
+- PIDS arrival filtering preserves other platforms' and sidings' results and applies the requested count after choosing the actual platform.
+- Signal Conflict & Phantom Braking Resolution: Clamps signal checking to the platform stopping point when entering an empty platform, preventing false emergency stops caused by departing trains on adjacent platforms or exit throat switches.
+- 4-Node Lookahead Horizon & Platform Calculation: Traverses at least 4 nodes back in the rail graph and ignores passed/current platform boundaries to ensure accurate alternate platform prediction and diversion.
+
+## MAGIC MTR compatibility
+
+When MAGIC MTR is installed, EMTRA takes over its alternate platform routing and arrival filtering automatically. Use MAGIC's alternate platform menu: EMTRA hides its own menu and uses MAGIC's saved selections, including all compatible platforms at a station. MAGIC's global and per-route settings still apply. Regenerate depot paths after changing selections. Without MAGIC, EMTRA's own menu and saved selections remain available.
+
+MAGIC's flexible timetables remain active. A train scheduled to skip a platform can divert around an occupied platform and continue through the alternative, retaining its original dwell time instead of gaining a passenger stop. Other inserted stops also retain the service's timetable. Compatibility targets MAGIC 1.5.1's `AlternativePlatformRegistry` API; MAGIC is optional and is not bundled.
 
 ## Supported Versions
 
@@ -44,6 +53,19 @@ To build individual variants:
 ```
 
 Compiled jar files are placed in the `build/release/` directory.
+
+Headless regression checks can run with the cached Gradle dependencies even when Gradle cannot start:
+```bash
+python3 tests/run_checks.py
+python3 tests/run_checks.py --magic-jar /path/to/MAGIC-1.5.1-1.20.1.jar
+```
+These compile the common/server code, exercise MTR's arrival consumer and routing helpers, and optionally check the compatibility transformations against MAGIC's actual bytecode. They do not replace a Fabric/Forge build or an in-game test.
+
+For a Forge 1.20.1 test JAR when Gradle cannot open its local lock sockets, use the cached-dependency builder:
+```bash
+python3 tools/build_offline_forge.py --jdk /path/to/java17 --mod-version 1.0.4-test1
+```
+It compiles all common and Forge sources, packages the loader metadata and resources, and checks that no Minecraft member references require ForgeGradle reobfuscation. It requires the cached MTR 4.0.5 and Forge 47.3.0 development dependencies. Normal release builds should still use Gradle.
 
 ## License
 

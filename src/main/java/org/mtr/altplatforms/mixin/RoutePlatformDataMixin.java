@@ -1,6 +1,7 @@
 package org.mtr.altplatforms.mixin;
 
 import org.mtr.altplatforms.duck.IAltRoutePlatformData;
+import org.mtr.altplatforms.compat.MagicMtrCompat;
 import org.mtr.core.data.Platform;
 import org.mtr.core.data.Route;
 import org.mtr.core.data.RoutePlatformData;
@@ -19,7 +20,14 @@ public abstract class RoutePlatformDataMixin {
 		if ((Object) this instanceof IAltRoutePlatformData) {
 			final IAltRoutePlatformData duck = (IAltRoutePlatformData) (Object) this;
 			duck.altplatforms$getAlternatePlatforms().clear();
-			final LongArrayList altIds = duck.altplatforms$getAlternatePlatformIds();
+			final LongArrayList altIds = MagicMtrCompat.isPresent() ? new LongArrayList() : new LongArrayList(duck.altplatforms$getAlternatePlatformIds());
+			if (((RoutePlatformData) (Object) this).platform != null) {
+				for (final long alternateId : MagicMtrCompat.getAlternatePlatformIds(route, ((RoutePlatformData) (Object) this).platform)) {
+					if (alternateId != duck.altplatforms$getPlatformId() && !altIds.contains(alternateId)) {
+						altIds.add(alternateId);
+					}
+				}
+			}
 			for (int i = 0; i < altIds.size(); i++) {
 				final Platform altPlatform = platformIdMap.get(altIds.getLong(i));
 				if (altPlatform != null) {

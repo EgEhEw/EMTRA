@@ -3,7 +3,10 @@
   "minVersion": "0.8",
   "package": "org.mtr.altplatforms.mixin",
   "compatibilityLevel": "JAVA_17",
+  "plugin": "org.mtr.altplatforms.compat.AltPlatformsMixinPlugin",
+  "mixinPriority": 900,
   "mixins": [
+    "ArrivalsRequestCompatMixin",
     "DepotMixin",
     "DepotSchemaMixin",
     "RoutePlatformDataMixin",
