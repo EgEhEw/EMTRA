@@ -1,5 +1,6 @@
 package com.egehew.emtra.render.mixin;
 
+import com.egehew.emtra.render.CatenaryCache;
 import com.egehew.emtra.render.RailRenderCache;
 import org.mtr.mapping.holder.Identifier;
 import org.mtr.mapping.holder.Vector3d;
@@ -40,6 +41,17 @@ public abstract class MainRendererMixin {
 
 	@Inject(method = "scheduleRender(Lorg/mtr/mapping/holder/Identifier;ZLorg/mtr/mod/render/QueuedRenderLayer;Ljava/util/function/BiConsumer;)V", at = @At("HEAD"), cancellable = true, require = 0, remap = false)
 	private static void emtra$wrapTextured(Identifier texture, boolean translucent, QueuedRenderLayer layer, BiConsumer<GraphicsHolder, Vector3d> consumer, CallbackInfo ci) {
+		final BiConsumer<GraphicsHolder, Vector3d> catenary = CatenaryCache.wrap(texture, translucent, layer, consumer);
+		if (catenary != null) {
+			CatenaryCache.setWrapping(true);
+			try {
+				MainRenderer.scheduleRender(texture, translucent, layer, catenary);
+			} finally {
+				CatenaryCache.setWrapping(false);
+			}
+			ci.cancel();
+			return;
+		}
 		final BiConsumer<GraphicsHolder, Vector3d> wrapped = RailRenderCache.wrap(layer, consumer, true);
 		if (wrapped != null) {
 			RailRenderCache.setWrapping(true);

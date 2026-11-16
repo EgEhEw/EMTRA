@@ -24,8 +24,9 @@ MAGIC's flexible timetables remain active. A train scheduled to skip a platform 
 `config/emtra-client.properties` (created on first launch):
 
 - `renderInstancing` (default `false`, experimental): draws repeated MTR model parts that share a mesh, such as 3D rail segments, with one GPU-instanced draw call instead of one call per part. Translucent parts, GL4ES and setups without MTR's custom shader keep MTR's own path; any error disables the feature for the session.
-- `renderRailCache` (default `false`, experimental): records the rail model placements MTR computes for each 3D rail and reuses them on later frames instead of recomputing rail curves every frame. Rails are re-recorded every few seconds; flat textured rails are not cached.
-- `renderStats` (default `false`): logs model, draw call and rail cache counts every 10 seconds.
+- `renderRailCache` (default `false`, experimental): records the rail model placements MTR computes for each 3D rail and reuses them on later frames instead of recomputing rail curves every frame. Rails are re-recorded every few seconds and re-read their light as soon as it changes; flat textured rails are not cached.
+- `renderCatenaryCache` (default `false`, experimental): for MSD (MTR Station Decoration) rigid catenary, captures the quads MSD draws once and keeps them as MTR optimized models on the GPU instead of rebuilding them vertex by vertex every frame. Light follows changes immediately and catenaries are re-captured every few seconds; nothing happens when MSD is not installed.
+- `renderStats` (default `false`): logs model, draw call, rail cache and catenary cache counts every 10 seconds.
 
 ## Supported Versions
 

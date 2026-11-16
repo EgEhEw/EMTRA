@@ -10,7 +10,9 @@
     "MaterialPropertiesMixin",
     "OptimizedRendererMixin",
     "RenderCallAccessor",
-    "RenderRailsMixin"
+    "RenderRailsMixin",
+    "InitBlockPosMixin",
+    "MsdRigidCatenaryMixin"
   ],
   "injectors": {
     "defaultRequire": 0

@@ -17,6 +17,8 @@ public final class EmtraClientConfig {
 	public static final boolean RENDER_INSTANCING;
 	/** Cache the model instances MTR queues for each rail instead of recomputing rail curves every frame. */
 	public static final boolean RENDER_RAIL_CACHE;
+	/** Draw MSD rigid catenary from cached MTR models instead of rebuilding its quads every frame. */
+	public static final boolean RENDER_CATENARY_CACHE;
 	/** Log draw call statistics every 10 seconds. */
 	public static final boolean RENDER_STATS;
 
@@ -24,6 +26,7 @@ public final class EmtraClientConfig {
 		final Properties defaults = new Properties();
 		defaults.setProperty("renderInstancing", "false");
 		defaults.setProperty("renderRailCache", "false");
+		defaults.setProperty("renderCatenaryCache", "false");
 		defaults.setProperty("renderStats", "false");
 		final Properties properties = new Properties();
 		properties.putAll(defaults);
@@ -40,7 +43,7 @@ public final class EmtraClientConfig {
 				merged.putAll(defaults);
 				merged.putAll(properties);
 				try (OutputStream outputStream = Files.newOutputStream(file)) {
-					merged.store(outputStream, "EMTRA client options. renderInstancing=true draws repeated MTR model parts (rails) with GPU instancing; renderRailCache=true reuses rail model placements instead of recomputing them every frame (both experimental).");
+					merged.store(outputStream, "EMTRA client options. renderInstancing=true draws repeated MTR model parts (rails) with GPU instancing; renderRailCache=true reuses rail model placements instead of recomputing them every frame; renderCatenaryCache=true draws MSD rigid catenary from cached models (all experimental).");
 				}
 			}
 		} catch (Exception e) {
@@ -48,6 +51,7 @@ public final class EmtraClientConfig {
 		}
 		RENDER_INSTANCING = Boolean.parseBoolean(properties.getProperty("renderInstancing", "false").trim());
 		RENDER_RAIL_CACHE = Boolean.parseBoolean(properties.getProperty("renderRailCache", "false").trim());
+		RENDER_CATENARY_CACHE = Boolean.parseBoolean(properties.getProperty("renderCatenaryCache", "false").trim());
 		RENDER_STATS = Boolean.parseBoolean(properties.getProperty("renderStats", "false").trim());
 	}
 
