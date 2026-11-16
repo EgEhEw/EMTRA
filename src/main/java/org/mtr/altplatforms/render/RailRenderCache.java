@@ -106,8 +106,18 @@ public final class RailRenderCache {
 		boolean failed;
 	}
 
+	/** All cached instances of one rail in one render layer, replayed by a single scheduled closure. */
+	private static final class Batch {
+		final QueuedRenderLayer layer;
+		final List<Instance> instances = new ArrayList<>();
+
+		Batch(QueuedRenderLayer layer) {
+			this.layer = layer;
+		}
+	}
+
 	private static final class Entry {
-		List<Group> groups;
+		List<Batch> batches;
 		Capture pending;
 		long nextCapture;
 		long bannedUntil;
@@ -129,6 +139,9 @@ public final class RailRenderCache {
 	private static double executingOffsetX, executingOffsetY, executingOffsetZ;
 
 	private static long frameStamp = -1;
+	/** Set by MainRenderer.render HEAD once per frame; without that hook, time-based fallbacks are used. */
+	private static boolean frameHook;
+	private static long frameId, cameraFrame = -1, frameNanos;
 	private static double camX, camY, camZ;
 	private static double fwdX, fwdY, fwdZ;
 	private static int renderDistance;
@@ -151,7 +164,7 @@ public final class RailRenderCache {
 		if (!EmtraClientConfig.RENDER_RAIL_CACHE || rail == null || !normalState) {
 			return false;
 		}
-		final long now = System.nanoTime();
+		final long now = now();
 		sweep(now);
 		Entry entry = CACHE.get(rail);
 		if (entry == null) {
@@ -169,16 +182,16 @@ public final class RailRenderCache {
 			final Capture capture = entry.pending;
 			entry.pending = null;
 			if (capture.failed || capture.scheduled == 0) {
-				entry.groups = null;
+				entry.batches = null;
 				entry.bannedUntil = now + BAN_NANOS;
 				return false;
 			}
-			entry.groups = capture.groups;
+			entry.batches = batches(capture.groups);
 			entry.nextCapture = now + RECAPTURE_NANOS + (System.identityHashCode(rail) & 0x7FF) * 1_000_000L;
 		}
-		if (entry.groups != null && now < entry.nextCapture) {
-			for (final Group group : entry.groups) {
-				MainRenderer.scheduleRender(group.layer, (graphicsHolder, offset) -> replay(group, graphicsHolder, offset));
+		if (entry.batches != null && now < entry.nextCapture) {
+			for (final Batch batch : entry.batches) {
+				MainRenderer.scheduleRender(batch.layer, (graphicsHolder, offset) -> replay(batch, graphicsHolder, offset));
 			}
 			statCached++;
 			return true;
@@ -189,6 +202,37 @@ public final class RailRenderCache {
 			statCaptured++;
 		}
 		return false;
+	}
+
+	/** MainRenderer.render HEAD: start of MTR's rendering for this frame. */
+	public static void beginFrame() {
+		frameHook = true;
+		frameId++;
+		frameNanos = System.nanoTime();
+	}
+
+	private static long now() {
+		return frameHook ? frameNanos : System.nanoTime();
+	}
+
+	/** Merges the captured per-segment groups into one batch per render layer, keeping the original order. */
+	private static List<Batch> batches(List<Group> groups) {
+		final List<Batch> batches = new ArrayList<>(2);
+		for (final Group group : groups) {
+			Batch batch = null;
+			for (final Batch existing : batches) {
+				if (existing.layer == group.layer) {
+					batch = existing;
+					break;
+				}
+			}
+			if (batch == null) {
+				batch = new Batch(group.layer);
+				batches.add(batch);
+			}
+			batch.instances.addAll(group.instances);
+		}
+		return batches;
 	}
 
 	/** RenderRails.renderRailStandard RETURN. */
@@ -280,7 +324,7 @@ public final class RailRenderCache {
 		// Only segments MTR actually draws (inside its render filter) got a light value from loaded chunks; the
 		// others are read again when they come into view.
 		instance.lightValid = visible;
-		instance.lightChecked = System.nanoTime();
+		instance.lightChecked = now();
 		if (visible && EmtraClientConfig.RENDER_STATS && instance.world != null && instance.lightPos != null) {
 			try {
 				final int read = LightmapTextureManager.pack(instance.world.getLightLevel(LightType.getBlockMapped(), instance.lightPos), instance.world.getLightLevel(LightType.getSkyMapped(), instance.lightPos));
@@ -304,7 +348,7 @@ public final class RailRenderCache {
 		}
 	}
 
-	private static void replay(Group group, GraphicsHolder graphicsHolder, Vector3d offset) {
+	private static void replay(Batch batch, GraphicsHolder graphicsHolder, Vector3d offset) {
 		final Matrix4f pose = pose(graphicsHolder);
 		if (pose == null) {
 			return;
@@ -312,9 +356,11 @@ public final class RailRenderCache {
 		updateCamera();
 		SAVED.set(pose);
 		final double ox = offset.getXMapped(), oy = offset.getYMapped(), oz = offset.getZMapped();
-		final long now = System.nanoTime();
+		final long now = now();
+		final List<Instance> instances = batch.instances;
 		try {
-			for (final Instance instance : group.instances) {
+			for (int i = 0, n = instances.size(); i < n; i++) {
+				final Instance instance = instances.get(i);
 				if (!visible(instance)) {
 					instance.lightValid = false; // re-read when it comes back into view
 					continue;
@@ -346,11 +392,18 @@ public final class RailRenderCache {
 	}
 
 	private static void updateCamera() {
-		final long stamp = System.nanoTime() / 2_000_000L; // refresh at most every 2 ms
-		if (stamp == frameStamp) {
-			return;
+		if (frameHook) {
+			if (cameraFrame == frameId) {
+				return;
+			}
+			cameraFrame = frameId;
+		} else {
+			final long stamp = System.nanoTime() / 2_000_000L; // no frame hook: refresh at most every 2 ms
+			if (stamp == frameStamp) {
+				return;
+			}
+			frameStamp = stamp;
 		}
-		frameStamp = stamp;
 		final Camera camera = MinecraftClient.getInstance().getGameRendererMapped().getCamera();
 		final Vector3d position = camera.getPos();
 		camX = position.getXMapped();

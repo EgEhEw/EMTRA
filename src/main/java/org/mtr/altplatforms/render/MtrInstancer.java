@@ -32,8 +32,6 @@ public final class MtrInstancer {
 	private static int vbo;
 	private static ByteBuffer buf;
 	private static boolean broken;
-	private static final float[] MAT = new float[16];
-	private static final java.nio.FloatBuffer MATBUF = java.nio.FloatBuffer.wrap(MAT);
 	private static long statCalls, statDraws, lastLog = System.nanoTime();
 
 	/** @return true if the whole list was drawn; false to let the original loop run. */
@@ -58,12 +56,36 @@ public final class MtrInstancer {
 				}
 				g.add(c);
 			}
+			// Pass 1: write the per-instance data of every instanceable group into one buffer.
+			ByteBuffer b = ensure(0);
+			List<Layout> layouts = new ArrayList<>(order.size());
 			for (VertexArray va : order) {
 				List<RenderCallAccessor> g = groups.get(va);
-				if (g.size() < 2 || !drawInstanced(va, g)) {
+				Layout layout = g.size() < 2 ? null : layout(va, g);
+				if (layout != null) {
+					b = grow(b, layout.stride * g.size());
+					layout.offset = b.position();
+					write(b, layout, g);
+				}
+				layouts.add(layout);
+			}
+			// Pass 2: one upload, then draw in the original order (instanced groups read from their offset).
+			if (b.position() > 0) {
+				b.flip();
+				if (vbo == 0) vbo = GL33.glGenBuffers();
+				GL33.glBindBuffer(GL33.GL_ARRAY_BUFFER, vbo);
+				GL33.glBufferData(GL33.GL_ARRAY_BUFFER, b, GL33.GL_STREAM_DRAW);
+				GL33.glBindBuffer(GL33.GL_ARRAY_BUFFER, 0);
+			}
+			for (int i = 0; i < order.size(); i++) {
+				VertexArray va = order.get(i);
+				List<RenderCallAccessor> g = groups.get(va);
+				Layout layout = layouts.get(i);
+				if (layout == null) {
 					for (RenderCallAccessor c : g) c.emtra$draw();
 					statDraws += g.size();
 				} else {
+					draw(va, layout, g.size());
 					statDraws++;
 				}
 				statCalls += g.size();
@@ -78,20 +100,36 @@ public final class MtrInstancer {
 		}
 	}
 
-	private static boolean drawInstanced(VertexArray va, List<RenderCallAccessor> g) {
+	/** Attribute layout of one instanceable group, or null from layout() if MTR's own path must draw it. */
+	private static final class Layout {
+		final VertexAttributeState material;
+		final boolean col, lit, ovl;
+		final int stride;
+		int offset;
+
+		Layout(VertexAttributeState material, boolean col, boolean lit, boolean ovl) {
+			this.material = material;
+			this.col = col;
+			this.lit = lit;
+			this.ovl = ovl;
+			stride = 64 + (col ? 16 : 0) + (lit ? 8 : 0) + (ovl ? 8 : 0);
+		}
+	}
+
+	private static Layout layout(VertexArray va, List<RenderCallAccessor> g) {
 		MaterialProperties mp = va.materialProperties;
 		VertexAttributeState ms = mp == null ? null : mp.vertexAttributeState;
 		VertexAttributeState s0 = g.get(0).emtra$state();
-		if (s0 == null || s0.position != null || s0.normal != null || s0.textureU != null || s0.textureV != null) return false;
+		if (s0 == null || s0.position != null || s0.normal != null || s0.textureU != null || s0.textureV != null) return null;
 		boolean mat = s0.matrix4f != null && (ms == null || ms.matrix4f == null);
 		boolean col = s0.color != null && (ms == null || ms.color == null);
 		boolean lit = s0.lightmapUV != null && (ms == null || ms.lightmapUV == null);
 		boolean ovl = s0.overlayUV != null && (ms == null || ms.overlayUV == null);
-		if (!mat) return false;
+		if (!mat) return null;
 		Map<VertexAttributeType, VertexAttributeSource> src = va.mapping.sources;
 		if (!global(src, VertexAttributeType.MATRIX_MODEL) || (col && !global(src, VertexAttributeType.COLOR))
 				|| (lit && !global(src, VertexAttributeType.UV_LIGHTMAP)) || (ovl && !global(src, VertexAttributeType.UV_OVERLAY))) {
-			return false;
+			return null;
 		}
 		int n = g.size();
 		for (int i = 1; i < n; i++) { // all states must use the same attribute layout
@@ -99,36 +137,40 @@ public final class MtrInstancer {
 			if (s == null || s.position != null || s.normal != null || s.textureU != null || s.textureV != null
 					|| (s.matrix4f != null) != (s0.matrix4f != null) || (s.color != null) != (s0.color != null)
 					|| (s.lightmapUV != null) != (s0.lightmapUV != null) || (s.overlayUV != null) != (s0.overlayUV != null)) {
-				return false;
+				return null;
 			}
 		}
-		int stride = 64 + (col ? 16 : 0) + (lit ? 8 : 0) + (ovl ? 8 : 0);
-		ByteBuffer b = ensure(stride * n);
-		for (int i = 0; i < n; i++) {
+		return new Layout(ms, col, lit, ovl);
+	}
+
+	private static void write(ByteBuffer b, Layout layout, List<RenderCallAccessor> g) {
+		for (int i = 0, n = g.size(); i < n; i++) {
 			VertexAttributeState s = g.get(i).emtra$state();
-			Utilities.store(s.matrix4f, MATBUF);
-			for (int k = 0; k < 16; k++) b.putFloat(MAT[k]);
-			if (col) {
+			// Same column-major order as Utilities.store (m00, m01, ... m33), written straight into the direct buffer.
+			int pos = b.position();
+			s.matrix4f.data.get(pos, b);
+			b.position(pos + 64);
+			if (layout.col) {
 				int c = s.color;
 				b.putFloat(((c >>> 24) & 255) / 255f).putFloat(((c >>> 16) & 255) / 255f)
 						.putFloat(((c >>> 8) & 255) / 255f).putFloat((c & 255) / 255f);
 			}
-			if (lit) {
+			if (layout.lit) {
 				int v = s.lightmapUV;
 				b.putInt((short) (v >>> 16)).putInt((short) v);
 			}
-			if (ovl) {
+			if (layout.ovl) {
 				int v = s.overlayUV;
 				b.putInt((short) (v >>> 16)).putInt((short) v);
 			}
 		}
-		b.flip();
+	}
 
+	private static void draw(VertexArray va, Layout layout, int n) {
+		final int stride = layout.stride;
+		long off = layout.offset;
 		va.bind();
-		if (vbo == 0) vbo = GL33.glGenBuffers();
 		GL33.glBindBuffer(GL33.GL_ARRAY_BUFFER, vbo);
-		GL33.glBufferData(GL33.GL_ARRAY_BUFFER, b, GL33.GL_STREAM_DRAW);
-		int off = 0;
 		int mloc = VertexAttributeType.MATRIX_MODEL.location;
 		for (int k = 0; k < 4; k++) {
 			GL33.glEnableVertexAttribArray(mloc + k);
@@ -138,40 +180,50 @@ public final class MtrInstancer {
 		off += 64;
 		int cloc = VertexAttributeType.COLOR.location, lloc = VertexAttributeType.UV_LIGHTMAP.location,
 				oloc = VertexAttributeType.UV_OVERLAY.location;
-		if (col) {
+		if (layout.col) {
 			GL33.glEnableVertexAttribArray(cloc);
 			GL33.glVertexAttribPointer(cloc, 4, GL33.GL_FLOAT, false, stride, off);
 			GL33.glVertexAttribDivisor(cloc, 1);
 			off += 16;
 		}
-		if (lit) {
+		if (layout.lit) {
 			GL33.glEnableVertexAttribArray(lloc);
 			GL33.glVertexAttribIPointer(lloc, 2, GL33.GL_INT, stride, off);
 			GL33.glVertexAttribDivisor(lloc, 1);
 			off += 8;
 		}
-		if (ovl) {
+		if (layout.ovl) {
 			GL33.glEnableVertexAttribArray(oloc);
 			GL33.glVertexAttribIPointer(oloc, 2, GL33.GL_INT, stride, off);
 			GL33.glVertexAttribDivisor(oloc, 1);
 		}
-		if (ms != null) ms.apply(); // material constants (attributes that are not instanced)
+		if (layout.material != null) layout.material.apply(); // material constants (attributes that are not instanced)
 		GL33.glDrawElementsInstanced(GL33.GL_TRIANGLES, va.indexBuffer.getVertexCount(), va.indexBuffer.indexType, 0L, n);
 		// restore VAO state: these locations are normally constant (GLOBAL)
 		for (int k = 0; k < 4; k++) {
 			GL33.glVertexAttribDivisor(mloc + k, 0);
 			GL33.glDisableVertexAttribArray(mloc + k);
 		}
-		if (col) { GL33.glVertexAttribDivisor(cloc, 0); GL33.glDisableVertexAttribArray(cloc); }
-		if (lit) { GL33.glVertexAttribDivisor(lloc, 0); GL33.glDisableVertexAttribArray(lloc); }
-		if (ovl) { GL33.glVertexAttribDivisor(oloc, 0); GL33.glDisableVertexAttribArray(oloc); }
+		if (layout.col) { GL33.glVertexAttribDivisor(cloc, 0); GL33.glDisableVertexAttribArray(cloc); }
+		if (layout.lit) { GL33.glVertexAttribDivisor(lloc, 0); GL33.glDisableVertexAttribArray(lloc); }
+		if (layout.ovl) { GL33.glVertexAttribDivisor(oloc, 0); GL33.glDisableVertexAttribArray(oloc); }
 		GL33.glBindBuffer(GL33.GL_ARRAY_BUFFER, 0);
-		return true;
 	}
 
 	private static boolean global(Map<VertexAttributeType, VertexAttributeSource> src, VertexAttributeType t) {
 		VertexAttributeSource s = src == null ? null : src.get(t);
 		return s == VertexAttributeSource.GLOBAL;
+	}
+
+	/** Makes room for more bytes after the current position, keeping what was written. */
+	private static ByteBuffer grow(ByteBuffer b, int more) {
+		if (b.remaining() >= more) return b;
+		ByteBuffer bigger = MemoryUtil.memAlloc(Math.max(b.capacity() * 2, b.position() + more) * 3 / 2);
+		b.flip();
+		bigger.put(b);
+		MemoryUtil.memFree(b);
+		buf = bigger;
+		return bigger;
 	}
 
 	private static ByteBuffer ensure(int bytes) {
