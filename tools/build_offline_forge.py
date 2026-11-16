@@ -59,8 +59,8 @@ for path in classpath:
         raise SystemExit(f'Missing cached dependency: {path}')
 
 sources = sorted((root / 'src/main/java').rglob('*.java')) + sorted((root / 'forge/src/main/java').rglob('*.java'))
-for path in [*(root / 'src/main/java/org/mtr/altplatforms/mixin').glob('*.java'),
-             *(root / 'src/main/java/org/mtr/altplatforms/render/mixin').glob('*.java')]:
+for path in [*(root / 'src/main/java/com/egehew/emtra/mixin').glob('*.java'),
+             *(root / 'src/main/java/com/egehew/emtra/render/mixin').glob('*.java')]:
     if 'remap = false' not in path.read_text():
         raise SystemExit(f'Normal Gradle build required: {path.name} may need a refmap')
 
@@ -79,8 +79,8 @@ with tempfile.TemporaryDirectory(prefix='emtra-forge-') as temporary:
 
     staging = Path(temporary) / output.name
     with ZipFile(staging, 'w', ZIP_DEFLATED) as jar:
-        jar.writestr('META-INF/MANIFEST.MF', 'Manifest-Version: 1.0\r\nMixinConfigs: mtr_alt_platforms.mixins.json,mtr_alt_platforms.render.mixins.json\r\n\r\n')
-        jar.writestr('mtr_alt_platforms.refmap.json', '{"mappings": {}, "data": {}}\n')
+        jar.writestr('META-INF/MANIFEST.MF', 'Manifest-Version: 1.0\r\nMixinConfigs: emtra.mixins.json,emtra.render.mixins.json\r\n\r\n')
+        jar.writestr('emtra.refmap.json', '{"mappings": {}, "data": {}}\n')
         for directory in [root / 'src/main/resources', root / 'forge/src/main/resources', classes]:
             for path in sorted(directory.rglob('*')):
                 if not path.is_file():

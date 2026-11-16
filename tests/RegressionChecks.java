@@ -1,8 +1,8 @@
-import org.mtr.altplatforms.compat.AltPlatformsMixinPlugin;
-import org.mtr.altplatforms.compat.MagicMtrCompat;
-import org.mtr.altplatforms.data.ArrivalRouting;
-import org.mtr.altplatforms.data.RoutingPathData;
-import org.mtr.altplatforms.duck.IVehicle;
+import com.egehew.emtra.compat.EmtraMixinPlugin;
+import com.egehew.emtra.compat.MagicMtrCompat;
+import com.egehew.emtra.data.ArrivalRouting;
+import com.egehew.emtra.data.RoutingPathData;
+import com.egehew.emtra.duck.IVehicle;
 import org.mtr.core.data.*;
 import org.mtr.core.serializer.JsonReader;
 import org.mtr.core.serializer.JsonWriter;
@@ -134,17 +134,17 @@ public final class RegressionChecks {
 
     private static void testMixinTargets() throws Exception {
         ClassNode core = readClass(Siding.class);
-        ClassNode mixin = readClass(org.mtr.altplatforms.mixin.SidingMixin.class);
-        MethodNode handler = mixin.methods.stream().filter(m -> m.name.equals("altplatforms$filterArrival")).findFirst().orElseThrow();
+        ClassNode mixin = readClass(com.egehew.emtra.mixin.SidingMixin.class);
+        MethodNode handler = mixin.methods.stream().filter(m -> m.name.equals("emtra$filterArrival")).findFirst().orElseThrow();
         String targetDescriptor = handler.desc.replace("Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;", "");
         check(core.methods.stream().anyMatch(m -> m.name.equals("lambda$getArrivals$13") && m.desc.equals(targetDescriptor)),
                 "Cancellable arrival filter descriptor matches MTR 4.0.5's candidate consumer");
-        ClassNode vehicle = readClass(org.mtr.altplatforms.mixin.VehicleMixin.class);
+        ClassNode vehicle = readClass(com.egehew.emtra.mixin.VehicleMixin.class);
         check(vehicle.methods.stream().noneMatch(m -> m.name.contains("RailBlockedDistance")),
                 "Vehicle mixin cannot override MTR signal reservations");
-        AltPlatformsMixinPlugin plugin = new AltPlatformsMixinPlugin();
-        check(plugin.shouldApplyMixin("", "org.mtr.altplatforms.mixin.DashboardScreenMixin"), "EMTRA menu remains without Magic");
-        check(!plugin.shouldApplyMixin("", "org.mtr.altplatforms.mixin.ArrivalsRequestCompatMixin"), "No Magic request patch without Magic");
+        EmtraMixinPlugin plugin = new EmtraMixinPlugin();
+        check(plugin.shouldApplyMixin("", "com.egehew.emtra.mixin.DashboardScreenMixin"), "EMTRA menu remains without Magic");
+        check(!plugin.shouldApplyMixin("", "com.egehew.emtra.mixin.ArrivalsRequestCompatMixin"), "No Magic request patch without Magic");
     }
 
     private static ClassNode readClass(Class<?> type) throws Exception {
@@ -158,9 +158,9 @@ public final class RegressionChecks {
     }
 
     private static void testMagicBytecode(Path magicJar) throws Exception {
-        AltPlatformsMixinPlugin plugin = new AltPlatformsMixinPlugin();
-        Field present = AltPlatformsMixinPlugin.class.getDeclaredField("magicPresent"); present.setAccessible(true); present.set(plugin, true);
-        check(!plugin.shouldApplyMixin("", "org.mtr.altplatforms.mixin.DashboardScreenMixin"), "EMTRA menu is hidden when Magic supplies the UI");
+        EmtraMixinPlugin plugin = new EmtraMixinPlugin();
+        Field present = EmtraMixinPlugin.class.getDeclaredField("magicPresent"); present.setAccessible(true); present.set(plugin, true);
+        check(!plugin.shouldApplyMixin("", "com.egehew.emtra.mixin.DashboardScreenMixin"), "EMTRA menu is hidden when Magic supplies the UI");
         int disabled = 0, redirected = 0;
         try (JarFile jar = new JarFile(magicJar.toFile())) {
             for (String name : List.of("VehicleAlternativePlatformRerouteMixin", "DepotAlternativePlatformMixin", "SidingDivertedArrivalsMixin",
@@ -192,7 +192,7 @@ public final class RegressionChecks {
                         new Analyzer<>(new BasicVerifier()).analyze(node.name, method);
                     }
                     for (AbstractInsnNode instruction : method.instructions) {
-                        if (instruction instanceof MethodInsnNode call && call.owner.equals("org/mtr/altplatforms/compat/MagicMtrCompat")) {
+                        if (instruction instanceof MethodInsnNode call && call.owner.equals("com/egehew/emtra/compat/MagicMtrCompat")) {
                             redirected++;
                             check(call.name.equals("getPrimaryPlatformIds"), "Magic siding redirect retains normal startup with a singleton platform");
                             new Analyzer<>(new BasicVerifier()).analyze(node.name, method);
@@ -224,10 +224,10 @@ public final class RegressionChecks {
         }
         @Override public boolean getIsOnRoute() { return true; }
         @Override public long getDepartureIndex() { return departure; }
-        @Override public double altplatforms$getRailProgress() { return 0; }
-        @Override public double altplatforms$getSpeed() { return 0; }
-        @Override public long altplatforms$getElapsedDwellTime() { return 0; }
-        @Override public long altplatforms$getUpcomingPlatformId() { return 0; }
-        @Override public double altplatforms$getDistanceToUpcomingPlatform() { return 0; }
+        @Override public double emtra$getRailProgress() { return 0; }
+        @Override public double emtra$getSpeed() { return 0; }
+        @Override public long emtra$getElapsedDwellTime() { return 0; }
+        @Override public long emtra$getUpcomingPlatformId() { return 0; }
+        @Override public double emtra$getDistanceToUpcomingPlatform() { return 0; }
     }
 }

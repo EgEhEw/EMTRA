@@ -1,0 +1,26 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.egehew.emtra.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "plugin": "com.egehew.emtra.compat.EmtraMixinPlugin",
+  "mixinPriority": 900,
+  "mixins": [
+    "ArrivalsRequestCompatMixin",
+    "DepotMixin",
+    "DepotSchemaMixin",
+    "RoutePlatformDataMixin",
+    "RoutePlatformDataSchemaMixin",
+    "SidingMixin",
+    "SidingPathFinderAccessor",
+    "VehicleExtraDataMixin",
+    "VehicleExtraDataSchemaMixin",
+    "VehicleMixin"
+  ],
+  "client": [
+    "DashboardScreenMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

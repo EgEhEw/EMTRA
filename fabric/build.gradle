@@ -34,7 +34,7 @@ loom {
 		ideConfigGenerated = true
 	}
 	mixin {
-		defaultRefmapName = "mtr_alt_platforms.refmap.json"
+		defaultRefmapName = "emtra.refmap.json"
 	}
 }
 

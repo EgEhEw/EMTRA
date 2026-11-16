@@ -3,28 +3,28 @@ loaderVersion="[47,)"
 license="MIT"
 
 [[mods]]
-modId="mtr_alt_platforms"
+modId="emtra"
 version="${version}"
 displayName="EMTRA"
 authors="EgEhEw"
 logoFile="icon.png"
 description='''EMTRA (EgEhEs MTR Addon) - Adds dynamic alternate platform routing, real-time PIDS arrival tracking, and intelligent train dispatching to Minecraft Transit Railway.'''
 
-[[dependencies.mtr_alt_platforms]]
+[[dependencies.emtra]]
     modId="forge"
     mandatory=true
     versionRange="[47,)"
     ordering="NONE"
     side="BOTH"
 
-[[dependencies.mtr_alt_platforms]]
+[[dependencies.emtra]]
     modId="minecraft"
     mandatory=true
     versionRange="[1.20.1,1.20.5)"
     ordering="NONE"
     side="BOTH"
 
-[[dependencies.mtr_alt_platforms]]
+[[dependencies.emtra]]
     modId="mtr"
     mandatory=true
     versionRange="[4.0.0,)"

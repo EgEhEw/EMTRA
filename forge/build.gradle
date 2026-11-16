@@ -39,9 +39,9 @@ dependencies {
 }
 
 mixin {
-	add sourceSets.main, "mtr_alt_platforms.refmap.json"
-	config "mtr_alt_platforms.mixins.json"
-	config "mtr_alt_platforms.render.mixins.json"
+	add sourceSets.main, "emtra.refmap.json"
+	config "emtra.mixins.json"
+	config "emtra.render.mixins.json"
 	debug.verbose = true
 	debug.export = true
 }
