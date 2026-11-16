@@ -1,8 +1,6 @@
 package org.mtr.altplatforms.render;
 
-import com.mojang.blaze3d.vertex.PoseStack;
 import org.joml.Matrix4f;
-import org.mtr.altplatforms.render.mixin.GraphicsHolderAccessor;
 import org.mtr.core.data.Rail;
 import org.mtr.mapping.holder.BlockPos;
 import org.mtr.mapping.holder.Camera;
@@ -368,8 +366,7 @@ public final class RailRenderCache {
 	}
 
 	private static Matrix4f pose(GraphicsHolder graphicsHolder) {
-		final PoseStack poseStack = ((GraphicsHolderAccessor) (Object) graphicsHolder).emtra$getMatrixStack();
-		return PoseAccess.pose(poseStack);
+		return PoseAccess.pose(graphicsHolder);
 	}
 
 	private static void sweep(long now) {

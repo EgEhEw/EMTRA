@@ -25,8 +25,14 @@ mtr = '4.0.5'
 version = f'{args.mod_version}+{mc}'
 
 
-def cached(group, artifact, number):
+prism_libraries = Path.home() / '.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/libraries'
+
+
+def cached(group, artifact, number, any_version=False):
     paths = sorted((modules / group / artifact / number).glob('*/*.jar'))
+    if not paths and any_version:
+        # Compile-only API jars: Gradle may prune its cache, so accept any cached or Prism launcher version.
+        paths = sorted((modules / group / artifact).glob('*/*/*.jar')) + sorted((prism_libraries / group.replace('.', '/') / artifact).glob('*/*.jar'))
     paths = [p for p in paths if not p.name.endswith(('-sources.jar', '-javadoc.jar')) and '-natives-' not in p.name]
     if not paths:
         raise SystemExit(f'Missing cached dependency: {group}:{artifact}:{number}')
@@ -41,7 +47,7 @@ classpath = [
     cached('net.minecraftforge', 'mergetool-api', '1.0'),
     cached('org.spongepowered', 'mixin', '0.8.5'),
     cached('com.google.code.findbugs', 'jsr305', '3.0.2'),
-    cached('org.apache.logging.log4j', 'log4j-api', '2.20.0'),
+    cached('org.apache.logging.log4j', 'log4j-api', '2.20.0', any_version=True),
     cached('org.ow2.asm', 'asm', '9.7.1'),
     cached('org.ow2.asm', 'asm-tree', '9.7.1'),
     cached('org.lwjgl', 'lwjgl', '3.3.1'),
