@@ -19,6 +19,14 @@ When MAGIC MTR is installed, EMTRA takes over its alternate platform routing and
 
 MAGIC's flexible timetables remain active. A train scheduled to skip a platform can divert around an occupied platform and continue through the alternative, retaining its original dwell time instead of gaining a passenger stop. Other inserted stops also retain the service's timetable. Compatibility targets MAGIC 1.5.1's `AlternativePlatformRegistry` API; MAGIC is optional and is not bundled.
 
+## Client options
+
+`config/emtra-client.properties` (created on first launch):
+
+- `renderInstancing` (default `false`, experimental): draws repeated MTR model parts that share a mesh, such as 3D rail segments, with one GPU-instanced draw call instead of one call per part. Translucent parts, GL4ES and setups without MTR's custom shader keep MTR's own path; any error disables the feature for the session.
+- `renderRailCache` (default `false`, experimental): records the rail model placements MTR computes for each 3D rail and reuses them on later frames instead of recomputing rail curves every frame. Rails are re-recorded every few seconds; flat textured rails are not cached.
+- `renderStats` (default `false`): logs model, draw call and rail cache counts every 10 seconds.
+
 ## Supported Versions
 
 - Minecraft 1.20.1: Fabric, Forge

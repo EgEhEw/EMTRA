@@ -17,7 +17,11 @@
     ]
   },
   "mixins": [
-    "mtr_alt_platforms.mixins.json"
+    "mtr_alt_platforms.mixins.json",
+    {
+      "config": "mtr_alt_platforms.render.mixins.json",
+      "environment": "client"
+    }
   ],
   "depends": {
     "fabricloader": ">=0.14.0",

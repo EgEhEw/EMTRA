@@ -27,7 +27,7 @@ version = f'{args.mod_version}+{mc}'
 
 def cached(group, artifact, number):
     paths = sorted((modules / group / artifact / number).glob('*/*.jar'))
-    paths = [p for p in paths if not p.name.endswith(('-sources.jar', '-javadoc.jar'))]
+    paths = [p for p in paths if not p.name.endswith(('-sources.jar', '-javadoc.jar')) and '-natives-' not in p.name]
     if not paths:
         raise SystemExit(f'Missing cached dependency: {group}:{artifact}:{number}')
     return paths[0]
@@ -44,13 +44,17 @@ classpath = [
     cached('org.apache.logging.log4j', 'log4j-api', '2.20.0'),
     cached('org.ow2.asm', 'asm', '9.7.1'),
     cached('org.ow2.asm', 'asm-tree', '9.7.1'),
+    cached('org.lwjgl', 'lwjgl', '3.3.1'),
+    cached('org.lwjgl', 'lwjgl-opengl', '3.3.1'),
+    cached('org.joml', 'joml', '1.10.5'),
 ]
 for path in classpath:
     if not path.is_file():
         raise SystemExit(f'Missing cached dependency: {path}')
 
 sources = sorted((root / 'src/main/java').rglob('*.java')) + sorted((root / 'forge/src/main/java').rglob('*.java'))
-for path in (root / 'src/main/java/org/mtr/altplatforms/mixin').glob('*.java'):
+for path in [*(root / 'src/main/java/org/mtr/altplatforms/mixin').glob('*.java'),
+             *(root / 'src/main/java/org/mtr/altplatforms/render/mixin').glob('*.java')]:
     if 'remap = false' not in path.read_text():
         raise SystemExit(f'Normal Gradle build required: {path.name} may need a refmap')
 
@@ -69,7 +73,7 @@ with tempfile.TemporaryDirectory(prefix='emtra-forge-') as temporary:
 
     staging = Path(temporary) / output.name
     with ZipFile(staging, 'w', ZIP_DEFLATED) as jar:
-        jar.writestr('META-INF/MANIFEST.MF', 'Manifest-Version: 1.0\r\nMixinConfigs: mtr_alt_platforms.mixins.json\r\n\r\n')
+        jar.writestr('META-INF/MANIFEST.MF', 'Manifest-Version: 1.0\r\nMixinConfigs: mtr_alt_platforms.mixins.json,mtr_alt_platforms.render.mixins.json\r\n\r\n')
         jar.writestr('mtr_alt_platforms.refmap.json', '{"mappings": {}, "data": {}}\n')
         for directory in [root / 'src/main/resources', root / 'forge/src/main/resources', classes]:
             for path in sorted(directory.rglob('*')):
