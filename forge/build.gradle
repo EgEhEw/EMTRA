@@ -42,6 +42,7 @@ mixin {
 	add sourceSets.main, "emtra.refmap.json"
 	config "emtra.mixins.json"
 	config "emtra.render.mixins.json"
+	config "emtra.forge.mixins.json"
 	debug.verbose = true
 	debug.export = true
 }

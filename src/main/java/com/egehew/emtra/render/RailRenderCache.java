@@ -55,6 +55,9 @@ public final class RailRenderCache {
 		/** False until the light was read for this frame's world state (MTR's value, or a refresh by position). */
 		boolean lightValid;
 		long lightChecked;
+		/** Section of lightPos and the light-change epoch of the last read (see LightEvents). */
+		final long sectionKey;
+		long lightEpoch;
 
 		Instance(OptimizedRenderer renderer, OptimizedModel model, Matrix4f matrix, double offsetX, double offsetY, double offsetZ, int color, int light, ClientWorld world, BlockPos lightPos) {
 			this.renderer = renderer;
@@ -70,11 +73,14 @@ public final class RailRenderCache {
 			this.light = light;
 			this.world = world;
 			this.lightPos = lightPos;
+			sectionKey = lightPos == null ? Long.MIN_VALUE : LightEvents.blockSectionKey(lightPos.getX(), lightPos.getY(), lightPos.getZ());
+			lightEpoch = LightEvents.epoch();
 		}
 
 		/** Same light MTR computes for the segment every frame: packed block and sky light at the segment start. */
 		void refreshLight(long now) {
-			lightChecked = now + (System.identityHashCode(this) & 0x3F) * 1_000_000L;
+			lightChecked = now + (System.identityHashCode(this) & 0xFF) * 1_000_000L;
+			lightEpoch = LightEvents.epoch();
 			if (world == null || lightPos == null) {
 				return;
 			}
@@ -147,7 +153,8 @@ public final class RailRenderCache {
 	private static int renderDistance;
 	private static long lastSweep = System.nanoTime(), lastLog = System.nanoTime();
 	/** MTR re-reads light every frame; a quarter second keeps cached segments within a few frames of it. */
-	private static final long LIGHT_REFRESH_NANOS = 250_000_000L;
+	/** Fallback poll; light changes normally arrive through LightEvents within a frame. */
+	private static final long LIGHT_REFRESH_NANOS = 2_000_000_000L;
 
 	private static long statCached, statCaptured, statLightChecked, statLightMismatch;
 	private static int mismatchSamples;
@@ -358,6 +365,7 @@ public final class RailRenderCache {
 		final double ox = offset.getXMapped(), oy = offset.getYMapped(), oz = offset.getZMapped();
 		final long now = now();
 		final List<Instance> instances = batch.instances;
+		final long lightEpoch = LightEvents.epoch();
 		try {
 			for (int i = 0, n = instances.size(); i < n; i++) {
 				final Instance instance = instances.get(i);
@@ -367,6 +375,13 @@ public final class RailRenderCache {
 				}
 				if (!instance.lightValid || now - instance.lightChecked > LIGHT_REFRESH_NANOS) {
 					instance.refreshLight(now);
+				} else if (instance.lightEpoch != lightEpoch) {
+					// Some section's light changed since this instance last read: re-read only if it was this one.
+					if (LightEvents.changedSince(instance.sectionKey, instance.lightEpoch)) {
+						instance.refreshLight(now);
+					} else {
+						instance.lightEpoch = lightEpoch;
+					}
 				}
 				TEMP.set(SAVED).translate((float) (instance.offsetX - ox), (float) (instance.offsetY - oy), (float) (instance.offsetZ - oz)).mul(instance.matrix);
 				pose.set(TEMP);

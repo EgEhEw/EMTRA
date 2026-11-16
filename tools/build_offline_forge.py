@@ -79,7 +79,7 @@ with tempfile.TemporaryDirectory(prefix='emtra-forge-') as temporary:
 
     staging = Path(temporary) / output.name
     with ZipFile(staging, 'w', ZIP_DEFLATED) as jar:
-        jar.writestr('META-INF/MANIFEST.MF', 'Manifest-Version: 1.0\r\nMixinConfigs: emtra.mixins.json,emtra.render.mixins.json\r\n\r\n')
+        jar.writestr('META-INF/MANIFEST.MF', 'Manifest-Version: 1.0\r\nMixinConfigs: emtra.mixins.json,emtra.render.mixins.json,emtra.forge.mixins.json\r\n\r\n')
         jar.writestr('emtra.refmap.json', '{"mappings": {}, "data": {}}\n')
         for directory in [root / 'src/main/resources', root / 'forge/src/main/resources', classes]:
             for path in sorted(directory.rglob('*')):
