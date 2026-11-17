@@ -501,14 +501,30 @@ public final class CatenaryCache {
 		}
 	}
 
-	/** GlStateTracker.assertProtected() throws when no capture is active. */
-	private static boolean GlStateTracker_isCaptured() {
+	private static final Field STATE_PROTECTED = findStateProtected();
+
+	private static Field findStateProtected() {
 		try {
-			GlStateTracker.assertProtected();
-			return true;
-		} catch (IllegalStateException e) {
-			return false;
+			final Field field = GlStateTracker.class.getDeclaredField("isStateProtected");
+			field.setAccessible(true);
+			return field;
+		} catch (Throwable t) {
+			return null;
 		}
+	}
+
+	/**
+	 * Whether a GlStateTracker capture is active. Reads MTR's private flag: assertProtected() would log a full
+	 * stack trace through MTR's logger every time it fails, so it must not be used as a probe.
+	 */
+	private static boolean GlStateTracker_isCaptured() {
+		if (STATE_PROTECTED != null) {
+			try {
+				return STATE_PROTECTED.getBoolean(null);
+			} catch (Throwable ignored) {
+			}
+		}
+		return false;
 	}
 
 	private CatenaryCache() {

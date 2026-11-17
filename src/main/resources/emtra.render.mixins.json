@@ -2,6 +2,7 @@
   "required": false,
   "minVersion": "0.8",
   "package": "com.egehew.emtra.render.mixin",
+  "plugin": "com.egehew.emtra.render.EmtraRenderMixinPlugin",
   "compatibilityLevel": "JAVA_17",
   "client": [
     "BatchDrawMixin",
@@ -26,7 +27,8 @@
     "JcmPositionedSoundMixin",
     "SppRaycastingMixin",
     "BveVehicleSoundMixin",
-    "RenderVehiclesSoundMixin"
+    "RenderVehiclesSoundMixin",
+    "RenderLiftsModelCacheMixin"
   ],
   "injectors": {
     "defaultRequire": 0
