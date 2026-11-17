@@ -16,7 +16,16 @@
     "DynamicVehicleModelMixin",
     "VehicleModelAccessor",
     "ModelPropertiesPartInvoker",
-    "VehicleResourceDoorsMixin"
+    "VehicleResourceDoorsMixin",
+    "MtrLoopingSoundMixin",
+    "VehicleRidingMovementAccessor",
+    "SoundPhysicsPerfectedFilterMixin",
+    "MtrVehicleSoundMixin",
+    "ScheduledSoundMixin",
+    "JcmScriptSoundMixin",
+    "JcmPositionedSoundMixin",
+    "SppRaycastingMixin",
+    "BveVehicleSoundMixin"
   ],
   "injectors": {
     "defaultRequire": 0

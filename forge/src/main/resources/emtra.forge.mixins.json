@@ -4,7 +4,8 @@
   "package": "com.egehew.emtra.forge.mixin",
   "compatibilityLevel": "JAVA_17",
   "client": [
-    "ClientChunkCacheLightMixin"
+    "ClientChunkCacheLightMixin",
+    "FangsuPlaySoundMixin"
   ],
   "injectors": {
     "defaultRequire": 0

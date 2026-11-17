@@ -14,6 +14,9 @@
   "entrypoints": {
     "main": [
       "com.egehew.emtra.fabric.EmtraFabric"
+    ],
+    "modmenu": [
+      "com.egehew.emtra.fabric.EmtraModMenu"
     ]
   },
   "mixins": [
@@ -32,5 +35,8 @@
     "minecraft": ">=1.20.1 <=1.20.4",
     "fabric-api": "*",
     "mtr": ">=4.0.0"
+  },
+  "suggests": {
+    "modmenu": "*"
   }
 }

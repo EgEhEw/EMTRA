@@ -2,5 +2,20 @@
   "modmenu.nameTranslation.emtra": "EMTRA",
   "modmenu.descriptionTranslation.emtra": "Planlanan peron dolu olduğunda trenlerin otomatik olarak alternatif perona geçmesini sağlar.",
   "gui.mtr.alt_platforms": "Alternatif Peronlar",
-  "gui.mtr.alternate_platforms": "Alternatif Peronlar"
+  "gui.mtr.alternate_platforms": "Alternatif Peronlar",
+  "options.emtra.title": "EMTRA Ayarları",
+  "options.emtra.on": "Açık",
+  "options.emtra.off": "Kapalı",
+  "options.emtra.section_sound": "Ses",
+  "options.emtra.train_muffle": "Trendeyken sesleri boğuklaştır (deneysel)",
+  "options.emtra.train_muffle_volume": "Trendeyken ses seviyesi",
+  "options.emtra.train_muffle_treble": "Trendeyken tiz seviyesi",
+  "options.emtra.train_muffle_door_open": "Açık kapının azalttığı boğukluk",
+  "options.emtra.train_muffle_fade": "Binme/inme geçiş süresi",
+  "options.emtra.section_render": "Görüntü",
+  "options.emtra.render_instancing": "MTR modellerini instancing ile çiz",
+  "options.emtra.render_rail_cache": "Ray çizim önbelleği",
+  "options.emtra.render_catenary_cache": "MSD katener önbelleği",
+  "options.emtra.render_stats": "Çizim istatistiklerini logla",
+  "options.emtra.train_muffle_door_fade": "Kapı açılma/kapanma geçiş süresi"
 }

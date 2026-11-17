@@ -31,6 +31,13 @@ subprojects {
 	}
 
 	repositories {
+		// Offline builds: locally installed copies of dependencies that Gradle's cache may have pruned.
+		mavenLocal {
+			content {
+				includeModule "net.fabricmc", "intermediary"
+				includeGroup "com.terraformersmc"
+			}
+		}
 		mavenCentral()
 		maven {
 			name = "Fabric"

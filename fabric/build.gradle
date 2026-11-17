@@ -8,6 +8,8 @@ base {
 
 def yarn_version = project.properties["yarn_mappings_${rootProject.minecraft_version}"]
 def fabric_api_version = project.properties["fabric_api_version_${rootProject.minecraft_version}"]
+def modmenu_version = project.properties["modmenu_version_${rootProject.minecraft_version}"]
+
 
 sourceSets {
 	main {
@@ -27,6 +29,9 @@ dependencies {
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
 
 	modImplementation "maven.modrinth:minecraft-transit-railway:FABRIC-${rootProject.mtr_version}+${rootProject.minecraft_version}"
+	modCompileOnly("com.terraformersmc:modmenu:${modmenu_version}") {
+		transitive = false
+	}
 }
 
 loom {

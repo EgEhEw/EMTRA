@@ -19,14 +19,32 @@ When MAGIC MTR is installed, EMTRA takes over its alternate platform routing and
 
 MAGIC's flexible timetables remain active. A train scheduled to skip a platform can divert around an occupied platform and continue through the alternative, retaining its original dwell time instead of gaining a passenger stop. Other inserted stops also retain the service's timetable. Compatibility targets MAGIC 1.5.1's `AlternativePlatformRegistry` API; MAGIC is optional and is not bundled.
 
+## Train fixes and sound
+
+Always active on the client:
+
+- Train doors keep their animation after a vehicle model is reloaded (fixes doors drawn closed while the doorway is open, until F3+T).
+- MTR vehicle sounds: looping BVE sounds (motor, run, flange, noise...) change volume and pitch smoothly, so a motor output that flickers from frame to frame no longer stops and restarts loops (clicks). Loop volume is capped at 1, which only limits the audible range to the one the pack's `sounds.json` gives (BVE packs with `MotorVolumeMultiply = 5` were heard 640 blocks away). One-shot sounds play once per event instead of once per scheduled sound.
+- Train sounds are silent when more than 3 opaque blocks lie on the straight line between the listener and the vehicle, and are absorbed by fewer blocks (trains in tunnels are not heard on the surface).
+- Sound Physics Perfected compatibility: vehicle sounds (MTR, JCM and FangSu scripts) are not replaced by SPP's ray-traced copies, which were updated twice a second and could not follow BVE sounds (stacked, jumping, leaking sounds); SPP's reverb still applies to them, combined with EMTRA's filters. SPP's permeation count no longer stops at its limit (30 blocks of ground counted as 3).
+
 ## Client options
 
-`config/emtra-client.properties` (created on first launch):
+`config/emtra-client.properties` (created on first launch), also editable in game from the mod list (Forge: Mods > EMTRA > Config; Fabric: Mod Menu):
 
-- `renderInstancing` (default `false`, experimental): draws repeated MTR model parts that share a mesh, such as 3D rail segments, with one GPU-instanced draw call instead of one call per part. Translucent parts, GL4ES and setups without MTR's custom shader keep MTR's own path; any error disables the feature for the session.
-- `renderRailCache` (default `false`, experimental): records the rail model placements MTR computes for each 3D rail and reuses them on later frames instead of recomputing rail curves every frame. Rails are re-recorded every few seconds and re-read their light as soon as it changes; flat textured rails are not cached.
-- `renderCatenaryCache` (default `false`, experimental): for MSD (MTR Station Decoration) rigid catenary, captures the quads MSD draws once and keeps them as MTR optimized models on the GPU instead of rebuilding them vertex by vertex every frame. Light follows changes immediately and catenaries are re-captured every few seconds; nothing happens when MSD is not installed.
-- `renderStats` (default `false`): logs model, draw call, rail cache and catenary cache counts every 10 seconds.
+Rendering
+
+- `renderInstancing` (default `true`): draws repeated MTR model parts that share a mesh, such as 3D rail segments, with one GPU-instanced draw call instead of one call per part. Translucent parts, GL4ES and setups without MTR's custom shader keep MTR's own path; any error disables the feature for the session.
+- `renderRailCache` (default `true`): records the rail model placements MTR computes for each 3D rail and reuses them on later frames instead of recomputing rail curves every frame. Rails are re-recorded every few seconds and re-read their light as soon as it changes; flat textured rails are not cached.
+- `renderCatenaryCache` (default `true`): for MSD (MTR Station Decoration) rigid catenary, captures the quads MSD draws once and keeps them as MTR optimized models on the GPU instead of rebuilding them vertex by vertex every frame. Light follows changes immediately and catenaries are re-captured every few seconds; nothing happens when MSD is not installed.
+- `renderStats` (default `false`): logs model, draw call, rail cache, catenary cache and sound filter counts every 10 seconds.
+
+Sound
+
+- `trainMuffle` (default `false`, experimental): while riding a train, everything outside and the train's own motor and run sounds are muffled as if heard through the car body; its doors and other sounds stay clear. The muffle fades in and out when boarding and alighting and follows the doors as they open and close.
+- `trainMuffleVolume` (default `55`) and `trainMuffleTreble` (default `10`): volume and high frequencies left at full muffle, in percent.
+- `trainMuffleDoorOpen` (default `75`): how much of the muffle open doors remove, in percent.
+- `trainMuffleFadeMs` (default `700`) and `trainMuffleDoorFadeMs` (default `250`): fade times for boarding/alighting and for the doors.
 
 ## Supported Versions
 

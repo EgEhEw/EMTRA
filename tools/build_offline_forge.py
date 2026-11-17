@@ -52,6 +52,8 @@ classpath = [
     cached('org.ow2.asm', 'asm-tree', '9.7.1'),
     cached('org.lwjgl', 'lwjgl', '3.3.1'),
     cached('org.lwjgl', 'lwjgl-opengl', '3.3.1'),
+    cached('org.lwjgl', 'lwjgl-openal', '3.3.1', any_version=True),
+    cached('net.minecraftforge', 'fmlloader', f'{mc}-{forge}'),
     cached('org.joml', 'joml', '1.10.5'),
 ]
 for path in classpath:

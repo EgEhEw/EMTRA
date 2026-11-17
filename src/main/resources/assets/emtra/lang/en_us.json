@@ -2,5 +2,20 @@
   "modmenu.nameTranslation.emtra": "EMTRA",
   "modmenu.descriptionTranslation.emtra": "Allows trains to automatically divert to alternate platforms when the scheduled platform is blocked.",
   "gui.mtr.alt_platforms": "Alternate Platforms",
-  "gui.mtr.alternate_platforms": "Alternate Platforms"
+  "gui.mtr.alternate_platforms": "Alternate Platforms",
+  "options.emtra.title": "EMTRA Settings",
+  "options.emtra.on": "On",
+  "options.emtra.off": "Off",
+  "options.emtra.section_sound": "Sound",
+  "options.emtra.train_muffle": "Muffle sounds while riding (experimental)",
+  "options.emtra.train_muffle_volume": "Volume while riding",
+  "options.emtra.train_muffle_treble": "Treble while riding",
+  "options.emtra.train_muffle_door_open": "Muffle removed by open doors",
+  "options.emtra.train_muffle_fade": "Boarding/alighting fade",
+  "options.emtra.section_render": "Rendering",
+  "options.emtra.render_instancing": "Instanced MTR model drawing",
+  "options.emtra.render_rail_cache": "Rail render cache",
+  "options.emtra.render_catenary_cache": "MSD catenary cache",
+  "options.emtra.render_stats": "Log render statistics",
+  "options.emtra.train_muffle_door_fade": "Door open/close fade"
 }

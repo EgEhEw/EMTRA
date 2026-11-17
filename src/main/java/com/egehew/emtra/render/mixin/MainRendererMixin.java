@@ -23,6 +23,7 @@ public abstract class MainRendererMixin {
 	@Inject(method = "render(Lorg/mtr/mod/entity/EntityRendering;FFLorg/mtr/mapping/mapper/GraphicsHolder;I)V", at = @At("HEAD"), require = 0, remap = false)
 	private void emtra$beginFrame(EntityRendering entity, float yaw, float tickDelta, GraphicsHolder graphicsHolder, int light, CallbackInfo ci) {
 		RailRenderCache.beginFrame();
+		com.egehew.emtra.sound.SoundFilters.update();
 	}
 
 	@Inject(method = "scheduleRender(Lorg/mtr/mod/render/QueuedRenderLayer;Ljava/util/function/BiConsumer;)V", at = @At("HEAD"), cancellable = true, require = 0, remap = false)
