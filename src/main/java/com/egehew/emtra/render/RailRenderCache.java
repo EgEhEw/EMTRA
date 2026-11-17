@@ -15,6 +15,7 @@ import org.mtr.mapping.mapper.OptimizedModel;
 import org.mtr.mapping.mapper.OptimizedRenderer;
 import org.mtr.mod.render.MainRenderer;
 import org.mtr.mod.render.QueuedRenderLayer;
+import org.mtr.mod.resource.RailResource;
 
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -33,7 +34,8 @@ import java.util.function.BiConsumer;
  * distance filter) as {@code M = base^-1 * P} together with the offset of that frame. Later frames skip MTR's
  * computation and queue {@code base' * T(offset - offset') * M} directly, applying the same distance and
  * behind-camera filter as MTR per instance. Rails that draw anything other than optimized models (flat textured
- * rails, previews) are never cached. Rails are recaptured every few seconds so light and edits stay current.
+ * rails, previews) are never cached. Rails are recaptured every few seconds so light and edits stay current, and
+ * shortly after a capture that found a rail style's model still loading.
  * Render thread only.
  */
 public final class RailRenderCache {
@@ -41,6 +43,8 @@ public final class RailRenderCache {
 	private static final long RECAPTURE_NANOS = 5_000_000_000L;
 	private static final long BAN_NANOS = 30_000_000_000L;
 	private static final long FORGET_NANOS = 10_000_000_000L;
+	/** Retry interval while some of a rail's models are still loading. */
+	private static final long INCOMPLETE_RETRY_NANOS = 100_000_000L;
 
 	private static final class Instance {
 		final OptimizedRenderer renderer;
@@ -110,6 +114,8 @@ public final class RailRenderCache {
 		final long started = System.nanoTime();
 		int scheduled, executed;
 		boolean failed;
+		/** A rail style's model was not loaded yet (MTR loads one resource per tick and drops unused ones after 60 s). */
+		boolean incomplete;
 	}
 
 	/** All cached instances of one rail in one render layer, replayed by a single scheduled closure. */
@@ -190,11 +196,14 @@ public final class RailRenderCache {
 			entry.pending = null;
 			if (capture.failed || capture.scheduled == 0) {
 				entry.batches = null;
-				entry.bannedUntil = now + BAN_NANOS;
-				return false;
+				if (!capture.incomplete || capture.failed) {
+					entry.bannedUntil = now + BAN_NANOS;
+				}
+				return false; // incomplete and empty: MTR draws it and the next frame captures again
 			}
 			entry.batches = batches(capture.groups);
-			entry.nextCapture = now + RECAPTURE_NANOS + (System.identityHashCode(rail) & 0x7FF) * 1_000_000L;
+			// Models still loading: replay what we have, but capture again shortly instead of in a few seconds.
+			entry.nextCapture = now + (capture.incomplete ? INCOMPLETE_RETRY_NANOS : RECAPTURE_NANOS + (System.identityHashCode(rail) & 0x7FF) * 1_000_000L);
 		}
 		if (entry.batches != null && now < entry.nextCapture) {
 			for (final Batch batch : entry.batches) {
@@ -250,10 +259,19 @@ public final class RailRenderCache {
 	}
 
 	/** Start of a rail segment callback while capturing: remembers the block position MTR samples light at. */
-	public static void onSegment(ClientWorld world, BlockPos pos) {
+	public static void onSegment(ClientWorld world, BlockPos pos, RailResource railResource) {
 		if (scheduling != null) {
 			segmentWorld = world;
 			segmentPos = pos;
+			if (!scheduling.incomplete && railResource != null) {
+				try {
+					// Same call MTR makes right after; null means the model is not loaded yet and draws nothing.
+					if (railResource.getOptimizedModel() == null && railResource.getDynamicVehicleModel() == null) {
+						scheduling.incomplete = true;
+					}
+				} catch (Throwable ignored) {
+				}
+			}
 		}
 	}
 

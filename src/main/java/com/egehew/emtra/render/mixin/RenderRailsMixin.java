@@ -35,7 +35,7 @@ public abstract class RenderRailsMixin {
 	@Inject(method = "lambda$renderRailStandard$16", at = @At("HEAD"), require = 0, remap = false)
 	private static void emtra$segment(ClientWorld clientWorld, RailResource railResource, boolean flag, boolean[] flags, BlockPos blockPos,
 									  double x1, double z1, double x2, double z2, double x3, double z3, double x4, double z4, double y1, double y2, CallbackInfo ci) {
-		RailRenderCache.onSegment(clientWorld, blockPos);
+		RailRenderCache.onSegment(clientWorld, blockPos, railResource);
 	}
 
 	/** While a rail is captured, every segment counts as close to the camera so the whole rail is recorded. */
