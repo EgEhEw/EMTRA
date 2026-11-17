@@ -12,7 +12,11 @@
     "RenderCallAccessor",
     "RenderRailsMixin",
     "InitBlockPosMixin",
-    "MsdRigidCatenaryMixin"
+    "MsdRigidCatenaryMixin",
+    "DynamicVehicleModelMixin",
+    "VehicleModelAccessor",
+    "ModelPropertiesPartInvoker",
+    "VehicleResourceDoorsMixin"
   ],
   "injectors": {
     "defaultRequire": 0
