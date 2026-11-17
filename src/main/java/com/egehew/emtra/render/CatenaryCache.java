@@ -171,7 +171,7 @@ public final class CatenaryCache {
 			entry.lightChecked = now;
 		} else if (entry.ready() && entry.built != null && (now - entry.lightChecked > LIGHT_CHECK_NANOS || entry.lightChanged())) {
 			entry.lightChecked = now + (System.identityHashCode(math) & 0xFF) * 1_000_000L;
-			entry.lightEpoch = LightEvents.epoch();
+			entry.lightEpoch = LightEvents.current();
 			if (!Arrays.equals(filteredLights(entry, entry.built, now), entry.lights) && !build(entry, entry.built, now)) {
 				entry.release();
 				entry.bannedUntil = now + BAN_NANOS;
@@ -351,7 +351,7 @@ public final class CatenaryCache {
 				sections.add(LightEvents.blockSectionKey(p[0], p[1], p[2]));
 			}
 			entry.lightSections = sections.stream().mapToLong(Long::longValue).toArray();
-			entry.lightEpoch = LightEvents.epoch();
+			entry.lightEpoch = LightEvents.current();
 			return true;
 		} catch (Throwable t) {
 			disable(t);

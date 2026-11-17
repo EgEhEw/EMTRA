@@ -17,7 +17,10 @@ import org.mtr.mod.render.MainRenderer;
 import org.mtr.mod.render.QueuedRenderLayer;
 import org.mtr.mod.resource.RailResource;
 
+import org.mtr.libraries.it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import org.mtr.libraries.it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -58,10 +61,8 @@ public final class RailRenderCache {
 		int light;
 		/** False until the light was read for this frame's world state (MTR's value, or a refresh by position). */
 		boolean lightValid;
-		long lightChecked;
-		/** Section of lightPos and the light-change epoch of the last read (see LightEvents). */
+		/** Section of lightPos (see LightEvents). */
 		final long sectionKey;
-		long lightEpoch;
 
 		Instance(OptimizedRenderer renderer, OptimizedModel model, Matrix4f matrix, double offsetX, double offsetY, double offsetZ, int color, int light, ClientWorld world, BlockPos lightPos) {
 			this.renderer = renderer;
@@ -78,13 +79,10 @@ public final class RailRenderCache {
 			this.world = world;
 			this.lightPos = lightPos;
 			sectionKey = lightPos == null ? Long.MIN_VALUE : LightEvents.blockSectionKey(lightPos.getX(), lightPos.getY(), lightPos.getZ());
-			lightEpoch = LightEvents.epoch();
 		}
 
 		/** Same light MTR computes for the segment every frame: packed block and sky light at the segment start. */
-		void refreshLight(long now) {
-			lightChecked = now + (System.identityHashCode(this) & 0xFF) * 1_000_000L;
-			lightEpoch = LightEvents.epoch();
+		void refreshLight() {
 			if (world == null || lightPos == null) {
 				return;
 			}
@@ -122,9 +120,125 @@ public final class RailRenderCache {
 	private static final class Batch {
 		final QueuedRenderLayer layer;
 		final List<Instance> instances = new ArrayList<>();
+		/** Bounds of the instances' world positions, for whole-batch visibility. */
+		double minX, minY, minZ, maxX, maxY, maxZ;
+		/** Light sections of its instances, for {@link #SECTION_BATCHES}. */
+		long[] sections = new long[0];
+		/** Sections whose light changed since the last replay (pushed by LightEvents). */
+		long[] dirty = new long[8];
+		int dirtyCount;
+		/** Re-read the light of every visible instance at the next replay. */
+		boolean refreshAll;
+		/** Not drawn at all last time: its instances' light may be stale. */
+		boolean hidden;
+		long nextLightRefresh;
 
 		Batch(QueuedRenderLayer layer) {
 			this.layer = layer;
+		}
+
+		void finish() {
+			minX = minY = minZ = Double.MAX_VALUE;
+			maxX = maxY = maxZ = -Double.MAX_VALUE;
+			final LongOpenHashSet keys = new LongOpenHashSet();
+			for (final Instance instance : instances) {
+				minX = Math.min(minX, instance.worldX);
+				minY = Math.min(minY, instance.worldY);
+				minZ = Math.min(minZ, instance.worldZ);
+				maxX = Math.max(maxX, instance.worldX);
+				maxY = Math.max(maxY, instance.worldY);
+				maxZ = Math.max(maxZ, instance.worldZ);
+				if (instance.sectionKey != Long.MIN_VALUE) {
+					keys.add(instance.sectionKey);
+				}
+			}
+			sections = keys.toLongArray();
+			nextLightRefresh = System.nanoTime() + LIGHT_REFRESH_NANOS + (System.identityHashCode(this) & 0x3FF) * 1_000_000L;
+		}
+
+		void markDirty(long section) {
+			if (refreshAll) {
+				return;
+			}
+			for (int i = 0; i < dirtyCount; i++) {
+				if (dirty[i] == section) {
+					return;
+				}
+			}
+			if (dirtyCount == dirty.length) {
+				if (dirtyCount >= 64) {
+					refreshAll = true; // many sections changed: just re-read everything visible once
+					dirtyCount = 0;
+					return;
+				}
+				dirty = Arrays.copyOf(dirty, dirty.length * 2);
+			}
+			dirty[dirtyCount++] = section;
+		}
+
+		boolean isDirty(long section) {
+			for (int i = 0; i < dirtyCount; i++) {
+				if (dirty[i] == section) {
+					return true;
+				}
+			}
+			return false;
+		}
+	}
+
+	/** Light section -> batches with instances in it, so light changes reach only the rails they affect. */
+	private static final Long2ObjectOpenHashMap<List<Batch>> SECTION_BATCHES = new Long2ObjectOpenHashMap<>();
+
+	private static void register(List<Batch> batches) {
+		for (final Batch batch : batches) {
+			for (final long section : batch.sections) {
+				List<Batch> list = SECTION_BATCHES.get(section);
+				if (list == null) {
+					list = new ArrayList<>(2);
+					SECTION_BATCHES.put(section, list);
+				}
+				list.add(batch);
+			}
+		}
+	}
+
+	private static void unregister(List<Batch> batches) {
+		if (batches == null) {
+			return;
+		}
+		for (final Batch batch : batches) {
+			for (final long section : batch.sections) {
+				final List<Batch> list = SECTION_BATCHES.get(section);
+				if (list != null) {
+					list.remove(batch);
+					if (list.isEmpty()) {
+						SECTION_BATCHES.remove(section);
+					}
+				}
+			}
+		}
+	}
+
+	/** Called by LightEvents (render thread) with the (section, epoch) pairs it just applied. */
+	static void onLightChanges(long[] pairs, int count) {
+		for (int i = 0; i < count; i += 2) {
+			final List<Batch> list = SECTION_BATCHES.get(pairs[i]);
+			if (list != null) {
+				for (int j = 0, n = list.size(); j < n; j++) {
+					list.get(j).markDirty(pairs[i]);
+				}
+			}
+		}
+	}
+
+	/** Called by LightEvents when it lost track of changes: every rail re-reads its light. */
+	static void onLightReset() {
+		for (final Entry entry : CACHE.values()) {
+			if (entry.batches != null) {
+				for (final Batch batch : entry.batches) {
+					batch.refreshAll = true;
+				}
+			}
 		}
 	}
 
@@ -195,13 +309,16 @@ public final class RailRenderCache {
 			final Capture capture = entry.pending;
 			entry.pending = null;
 			if (capture.failed || capture.scheduled == 0) {
+				unregister(entry.batches);
 				entry.batches = null;
 				if (!capture.incomplete || capture.failed) {
 					entry.bannedUntil = now + BAN_NANOS;
 				}
 				return false; // incomplete and empty: MTR draws it and the next frame captures again
 			}
+			unregister(entry.batches);
 			entry.batches = batches(capture.groups);
+			register(entry.batches);
 			// Models still loading: replay what we have, but capture again shortly instead of in a few seconds.
 			entry.nextCapture = now + (capture.incomplete ? INCOMPLETE_RETRY_NANOS : RECAPTURE_NANOS + (System.identityHashCode(rail) & 0x7FF) * 1_000_000L);
 		}
@@ -247,6 +364,9 @@ public final class RailRenderCache {
 				batches.add(batch);
 			}
 			batch.instances.addAll(group.instances);
+		}
+		for (final Batch batch : batches) {
+			batch.finish();
 		}
 		return batches;
 	}
@@ -349,7 +469,6 @@ public final class RailRenderCache {
 		// Only segments MTR actually draws (inside its render filter) got a light value from loaded chunks; the
 		// others are read again when they come into view.
 		instance.lightValid = visible;
-		instance.lightChecked = now();
 		if (visible && EmtraClientConfig.RENDER_STATS && instance.world != null && instance.lightPos != null) {
 			try {
 				final int read = LightmapTextureManager.pack(instance.world.getLightLevel(LightType.getBlockMapped(), instance.lightPos), instance.world.getLightLevel(LightType.getSkyMapped(), instance.lightPos));
@@ -373,33 +492,46 @@ public final class RailRenderCache {
 		}
 	}
 
+	private static final int HIDDEN = 0, PARTIAL = 1, ALL = 2;
+	private static long lightFrame = -1;
+
 	private static void replay(Batch batch, GraphicsHolder graphicsHolder, Vector3d offset) {
 		final Matrix4f pose = pose(graphicsHolder);
 		if (pose == null) {
 			return;
 		}
 		updateCamera();
+		if (lightFrame != frameId || !frameHook) {
+			lightFrame = frameId;
+			LightEvents.epoch(); // applies pending light changes: marks the affected batches dirty
+		}
+		final int visibility = visibility(batch);
+		if (visibility == HIDDEN) {
+			batch.hidden = true;
+			return;
+		}
+		// Light: re-read everything visible after the batch was hidden, on a forced refresh and every few seconds
+		// (fallback); otherwise only instances in sections whose light changed, and instances never read.
+		final long now = now();
+		final boolean refreshAll = batch.hidden || batch.refreshAll || now >= batch.nextLightRefresh;
+		if (refreshAll) {
+			batch.nextLightRefresh = now + LIGHT_REFRESH_NANOS;
+			batch.refreshAll = false;
+		}
+		batch.hidden = false;
+		final boolean dirty = !refreshAll && batch.dirtyCount > 0;
 		SAVED.set(pose);
 		final double ox = offset.getXMapped(), oy = offset.getYMapped(), oz = offset.getZMapped();
-		final long now = now();
 		final List<Instance> instances = batch.instances;
-		final long lightEpoch = LightEvents.epoch();
 		try {
 			for (int i = 0, n = instances.size(); i < n; i++) {
 				final Instance instance = instances.get(i);
-				if (!visible(instance)) {
+				if (visibility == PARTIAL && !visible(instance)) {
 					instance.lightValid = false; // re-read when it comes back into view
 					continue;
 				}
-				if (!instance.lightValid || now - instance.lightChecked > LIGHT_REFRESH_NANOS) {
-					instance.refreshLight(now);
-				} else if (instance.lightEpoch != lightEpoch) {
-					// Some section's light changed since this instance last read: re-read only if it was this one.
-					if (LightEvents.changedSince(instance.sectionKey, instance.lightEpoch)) {
-						instance.refreshLight(now);
-					} else {
-						instance.lightEpoch = lightEpoch;
-					}
+				if (refreshAll || !instance.lightValid || dirty && batch.isDirty(instance.sectionKey)) {
+					instance.refreshLight();
 				}
 				TEMP.set(SAVED).translate((float) (instance.offsetX - ox), (float) (instance.offsetY - oy), (float) (instance.offsetZ - oz)).mul(instance.matrix);
 				pose.set(TEMP);
@@ -407,7 +539,40 @@ public final class RailRenderCache {
 			}
 		} finally {
 			pose.set(SAVED);
+			// Only now: isDirty reads the list while the instances are checked.
+			batch.dirtyCount = 0;
 		}
+	}
+
+	/**
+	 * {@link #visible} for the whole batch at once from its bounds: HIDDEN or ALL when every instance gives the same
+	 * answer, PARTIAL otherwise. The forward test is linear in the position, so the box corners bound it.
+	 */
+	private static int visibility(Batch batch) {
+		final double nearX = Math.max(0, Math.max(batch.minX - camX, camX - batch.maxX));
+		final double nearZ = Math.max(0, Math.max(batch.minZ - camZ, camZ - batch.maxZ));
+		final double nearHorizontal = Math.sqrt(nearX * nearX + nearZ * nearZ);
+		if (nearHorizontal > renderDistance) {
+			return HIDDEN;
+		}
+		final double farX = Math.max(Math.abs(batch.minX - camX), Math.abs(batch.maxX - camX));
+		final double farZ = Math.max(Math.abs(batch.minZ - camZ), Math.abs(batch.maxZ - camZ));
+		final double farHorizontal = Math.sqrt(farX * farX + farZ * farZ);
+		if (farHorizontal < 32) {
+			return ALL;
+		}
+		final double ax = (batch.minX - camX) * fwdX, bx = (batch.maxX - camX) * fwdX;
+		final double ay = (batch.minY - camY) * fwdY, by = (batch.maxY - camY) * fwdY;
+		final double az = (batch.minZ - camZ) * fwdZ, bz = (batch.maxZ - camZ) * fwdZ;
+		final double minForward = Math.min(ax, bx) + Math.min(ay, by) + Math.min(az, bz);
+		final double maxForward = Math.max(ax, bx) + Math.max(ay, by) + Math.max(az, bz);
+		if (nearHorizontal >= 32 && maxForward <= 0) {
+			return HIDDEN;
+		}
+		if (farHorizontal <= renderDistance && minForward > 0) {
+			return ALL;
+		}
+		return PARTIAL;
 	}
 
 	/** Same filter as RenderRails.renderWithinRenderDistance: horizontal render distance, and in front of the camera beyond 32 blocks. */
@@ -462,7 +627,9 @@ public final class RailRenderCache {
 		lastSweep = now;
 		final Iterator<Entry> iterator = CACHE.values().iterator();
 		while (iterator.hasNext()) {
-			if (now - iterator.next().lastSeen > FORGET_NANOS) {
+			final Entry entry = iterator.next();
+			if (now - entry.lastSeen > FORGET_NANOS) {
+				unregister(entry.batches);
 				iterator.remove();
 			}
 		}

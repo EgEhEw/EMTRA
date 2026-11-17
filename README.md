@@ -36,7 +36,7 @@ Always active on the client:
 Rendering
 
 - `renderInstancing` (default `true`): draws repeated MTR model parts that share a mesh, such as 3D rail segments, with one GPU-instanced draw call instead of one call per part. Translucent parts, GL4ES and setups without MTR's custom shader keep MTR's own path; any error disables the feature for the session.
-- `renderRailCache` (default `true`): records the rail model placements MTR computes for each 3D rail and reuses them on later frames instead of recomputing rail curves every frame. Rails are re-recorded every few seconds and re-read their light as soon as it changes; flat textured rails are not cached.
+- `renderRailCache` (default `true`): records the rail model placements MTR computes for each 3D rail and reuses them on later frames instead of recomputing rail curves every frame. Visibility is decided per rail where possible (only partly visible rails check their segments one by one), and only the segments in a section whose light changed re-read it, as soon as it changes. Rails are re-recorded every few seconds; flat textured rails are not cached.
 - `renderCatenaryCache` (default `true`): for MSD (MTR Station Decoration) rigid catenary, captures the quads MSD draws once and keeps them as MTR optimized models on the GPU instead of rebuilding them vertex by vertex every frame. Light follows changes immediately and catenaries are re-captured every few seconds; nothing happens when MSD is not installed.
 - `renderStats` (default `false`): logs model, draw call, rail cache, catenary cache and sound filter counts every 10 seconds.
 
