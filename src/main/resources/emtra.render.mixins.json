@@ -25,7 +25,8 @@
     "JcmScriptSoundMixin",
     "JcmPositionedSoundMixin",
     "SppRaycastingMixin",
-    "BveVehicleSoundMixin"
+    "BveVehicleSoundMixin",
+    "RenderVehiclesSoundMixin"
   ],
   "injectors": {
     "defaultRequire": 0

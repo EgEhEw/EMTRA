@@ -47,7 +47,9 @@ public final class MtrSounds {
 	private static final java.util.regex.Pattern MOTOR_OR_RUN_ID = java.util.regex.Pattern.compile("(^|[_/.-])(motor|run)\\d*$", java.util.regex.Pattern.CASE_INSENSITIVE);
 	private static java.lang.reflect.Field holderField, motorField, runField;
 	private static boolean tagFailed;
-	private static final Map<Long, Integer> OCCLUSION_CACHE = new java.util.HashMap<>();
+	private static final Map<Long, double[]> OCCLUSION_CACHE = new java.util.HashMap<>();
+	private static final float[] REACH = new float[2];
+	private static final double[] APPARENT = new double[3];
 	private static final double MAX_DISTANCE = 128;
 	private static final float OCCLUSION_FADE_SECONDS = 0.3F;
 	private static final double[] COPY_POSITION = new double[3];
@@ -70,7 +72,7 @@ public final class MtrSounds {
 	 * Every playing vehicle sound near the listener. A sound is either played directly (its source is found by
 	 * position) or replaced by a Sound Physics Perfected copy (its source id is known, or found by the copy's
 	 * position). gain/gainHF: EMTRA's smoothed factor for it, from the blocks on the straight line between the
-	 * listener and the vehicle: silent above the configured block limit, EMTRA occlusion when SPP does not handle it.
+	 * listener and the vehicle (see {@link SoundPaths}): through the air around obstacles, or silent.
 	 * Returns the count; sources[i] is the OpenAL source or 0.
 	 */
 	static int collect(float[][] holder, int[][] sourceHolder, double listenerX, double listenerY, double listenerZ, float seconds) {
@@ -88,11 +90,14 @@ public final class MtrSounds {
 			OCCLUSION_CACHE.clear();
 			final org.mtr.mapping.holder.SoundManager soundManager = MinecraftClient.getInstance().getSoundManager();
 			final boolean occlusion = SoundFilters.occlusionActive();
-			final int limit = EmtraClientConfig.VEHICLE_SOUND_BLOCK_LIMIT;
 			int count = 0;
 			for (final MovingSoundInstanceAbstractMapping sound : SOUNDS) {
 				try {
-					final double x = sound.getX2(), y = sound.getY2(), z = sound.getZ2();
+					// The vehicle's own position (getX2 may be the apparent position Minecraft plays the sound at)
+					final ApparentPosition apparentPosition = sound instanceof ApparentPosition ? (ApparentPosition) sound : null;
+					final double x = apparentPosition == null ? sound.getX2() : apparentPosition.emtra$trueX();
+					final double y = apparentPosition == null ? sound.getY2() : apparentPosition.emtra$trueY();
+					final double z = apparentPosition == null ? sound.getZ2() : apparentPosition.emtra$trueZ();
 					final double dx = x - listenerX, dy = y - listenerY, dz = z - listenerZ;
 					if (dx * dx + dy * dy + dz * dz > MAX_DISTANCE * MAX_DISTANCE) {
 						continue;
@@ -101,8 +106,9 @@ public final class MtrSounds {
 					// The exact OpenAL source from Minecraft's sound engine where possible: all loops of a car play at the
 					// same position, so positions alone cannot tell the motor from the noise loop.
 					int source = 0;
-					double sourceX = x, sourceY = y, sourceZ = z;
-					if (soundManager.isPlaying(new SoundInstance(sound))) {
+					double sourceX = sound.getX2(), sourceY = sound.getY2(), sourceZ = sound.getZ2();
+					final boolean direct = soundManager.isPlaying(new SoundInstance(sound));
+					if (direct) {
 						source = SoundSources.sourceOf(sound);
 					} else {
 						final Object copy = SoundPhysicsCompat.copyOf(sound);
@@ -122,21 +128,26 @@ public final class MtrSounds {
 							sourceZ = COPY_POSITION[2];
 						}
 					}
-					// Blocks between the listener and the vehicle itself (not where SPP moved the sound)
+					// How it reaches the listener from the vehicle itself (not from where SPP moved the sound)
 					final long key = (long) Math.floor(x) * 31L * 31L * 1024L + (long) Math.floor(y) * 31L * 1024L + (long) Math.floor(z);
-					int blocks = OCCLUSION_CACHE.getOrDefault(key, -1);
-					if (blocks < 0) {
-						blocks = SoundFilters.countOccludingBlocks(listenerX, listenerY, listenerZ, x, y, z);
-						OCCLUSION_CACHE.put(key, blocks);
+					double[] reach = OCCLUSION_CACHE.get(key);
+					if (reach == null) {
+						SoundPaths.evaluate(listenerX, listenerY, listenerZ, x, y, z, REACH, APPARENT);
+						reach = new double[]{REACH[0], REACH[1], APPARENT[0], APPARENT[1], APPARENT[2]};
+						OCCLUSION_CACHE.put(key, reach);
+					}
+					if (apparentPosition != null) {
+						if (occlusion && !Double.isNaN(reach[2])) {
+							apparentPosition.emtra$setApparentTarget(reach[2], reach[3], reach[4]);
+						} else {
+							apparentPosition.emtra$setApparentTarget(Double.NaN, 0, 0);
+						}
 					}
 					float targetGain = 1, targetGainHF = 1;
 					if (occlusion) {
-						targetGain = sound instanceof OneShotSound ? 1 : SoundFilters.occlusionGain(blocks);
-						targetGainHF = SoundFilters.occlusionGainHF(blocks);
-					}
-					if (limit > 0 && blocks > limit) {
-						targetGain = 0;
-						targetGainHF = 0;
+						// One-shot sounds already had the gain applied to their volume when they started.
+						targetGain = sound instanceof OneShotSound && reach[0] > 0 ? 1 : (float) reach[0];
+						targetGainHF = (float) reach[1];
 					}
 					float[] smoothed = SMOOTHED.get(sound);
 					if (smoothed == null) {
@@ -148,7 +159,7 @@ public final class MtrSounds {
 					}
 					// 1: a sound of the riding train that stays clear of the muffle; motor and run loops are muffled like outside.
 					final float own = SoundFilters.insideRidingVehicle(x, y, z) && !isMotorOrRun(sound) ? 1 : 0;
-					final float[] history = source == 0 && sourceX == x && sourceY == y && sourceZ == z ? HISTORY.get(sound) : null;
+					final float[] history = source == 0 && direct ? HISTORY.get(sound) : null;
 					final int rows = 1 + (history == null ? 0 : HISTORY_LENGTH);
 					if (array.length < (count + rows) * STRIDE || sources.length < count + rows) {
 						array = Arrays.copyOf(array, (count + rows) * STRIDE * 2);
@@ -297,8 +308,8 @@ public final class MtrSounds {
 
 	/**
 	 * Plays a one-shot vehicle sound (MTR, JCM scripts, FangSu scripts) as an EMTRA sound instance, so it is known as a
-	 * vehicle sound (block limit, kept clear of the riding muffle). It starts before the next filter update, so the
-	 * block limit and EMTRA's occlusion gain are applied right away.
+	 * vehicle sound (occlusion, kept clear of the riding muffle). It starts before the next filter update, so whether
+	 * and how loud it reaches the listener ({@link SoundPaths}) is applied right away.
 	 */
 	public static void playOneShot(double x, double y, double z, SoundEvent soundEvent, SoundCategory category, float volume, float pitch, Runnable vanilla) {
 		try {

@@ -34,8 +34,6 @@ public final class EmtraClientConfig {
 	public static final boolean SMOOTH_VEHICLE_SOUNDS = true;
 	/** Cap MTR vehicle loop volume at 1: above 1 Minecraft only multiplies the audible range (BVE motors x5 = 640 blocks). */
 	public static final boolean LIMIT_VEHICLE_SOUND_RANGE = true;
-	/** Vehicle sounds with more opaque blocks than this on the line to the listener are silent (0 = off). */
-	public static final int VEHICLE_SOUND_BLOCK_LIMIT = 3;
 	/** Occlude MTR vehicle sounds by the blocks between them and the listener (trains in tunnels). */
 	public static final boolean MTR_SOUND_OCCLUSION = true;
 	/** Muffle sounds while riding a train (experimental, off by default). */

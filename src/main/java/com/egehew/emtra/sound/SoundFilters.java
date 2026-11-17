@@ -30,8 +30,8 @@ import java.util.Arrays;
  * boarding, out when alighting, and is reduced while the doors are open (following MTR's door value).
  * By default the riding train's own vehicle sounds (its loops and doors) are not muffled; everything else is.
  * </li>
- * <li><b>Vehicle sound block limit</b>: a vehicle sound with more opaque blocks than the limit on the straight line to
- * the listener is silent, whatever path Sound Physics Perfected found for it (openings, stairwells).</li>
+ * <li><b>Vehicle sound paths</b>: a vehicle sound that can reach the listener neither in a straight line nor through
+ * the air around obstacles ({@link SoundPaths}) is silent, whatever path Sound Physics Perfected found for it.</li>
  * </ul>
  * Only valid OpenAL queries are used (a source's direct filter cannot be read back in OpenAL Soft, and an invalid
  * query leaves an error that Minecraft's sound thread would report as its own and then drop the sound), and any
@@ -111,7 +111,7 @@ public final class SoundFilters {
 			riding = approach(riding, findMuffleTarget(), EmtraClientConfig.TRAIN_MUFFLE_FADE_MS / 1000F, seconds);
 			door = approach(door, doorTarget, EmtraClientConfig.TRAIN_MUFFLE_DOOR_FADE_MS / 1000F, seconds);
 			muffle = riding * (1 - door * EmtraClientConfig.TRAIN_MUFFLE_DOOR_OPEN / 100F);
-			final boolean vehicleSounds = !MtrSounds.isEmpty() && (occlusionActive() || EmtraClientConfig.VEHICLE_SOUND_BLOCK_LIMIT > 0 || muffle > EPSILON);
+			final boolean vehicleSounds = !MtrSounds.isEmpty() && (occlusionActive() || muffle > EPSILON);
 			if (muffle <= EPSILON && !vehicleSounds && !anyAttached) {
 				if (factorsSet) {
 					// Nothing is filtered any more: no source may keep a stale factor for SPP's reverb send.
@@ -142,14 +142,13 @@ public final class SoundFilters {
 
 	/**
 	 * Occlusion between the listener and a point, for one-shot sounds that start before the next filter update:
-	 * returns {gain, gainHF, 1 if more blocks than the vehicle sound block limit}.
+	 * returns {gain, gainHF, 1 if it does not reach the listener at all}.
 	 */
 	public static float[] occlusionAt(double x, double y, double z) {
 		OCCLUSION_RESULT[0] = 1;
 		OCCLUSION_RESULT[1] = 1;
 		OCCLUSION_RESULT[2] = 0;
-		final int limit = EmtraClientConfig.VEHICLE_SOUND_BLOCK_LIMIT;
-		if (broken || !occlusionActive() && limit <= 0) {
+		if (broken || !occlusionActive()) {
 			return OCCLUSION_RESULT;
 		}
 		try {
@@ -158,10 +157,8 @@ public final class SoundFilters {
 			}
 			AL10.alGetListener3f(AL10.AL_POSITION, X, Y, Z);
 			AL10.alGetError();
-			final int blocks = countOccludingBlocks(X[0], Y[0], Z[0], x, y, z);
-			OCCLUSION_RESULT[0] = occlusionGain(blocks);
-			OCCLUSION_RESULT[1] = occlusionGainHF(blocks);
-			OCCLUSION_RESULT[2] = limit > 0 && blocks > limit ? 1 : 0;
+			SoundPaths.evaluate(X[0], Y[0], Z[0], x, y, z, OCCLUSION_RESULT, null);
+			OCCLUSION_RESULT[2] = OCCLUSION_RESULT[0] < 0.01F ? 1 : 0;
 		} catch (Throwable ignored) {
 		}
 		return OCCLUSION_RESULT;
@@ -356,6 +353,9 @@ public final class SoundFilters {
 		final float muffleTreble = EmtraClientConfig.TRAIN_MUFFLE_TREBLE / 100F;
 		AL10.alGetListener3f(AL10.AL_POSITION, X, Y, Z);
 		final double listenerX = X[0], listenerY = Y[0], listenerZ = Z[0];
+		if (vehicleSounds && occlusionActive()) {
+			SoundPaths.beginUpdate(listenerX, listenerY, listenerZ);
+		}
 		final int mtrSounds = vehicleSounds ? MtrSounds.collect(MTR_SOUNDS, MTR_SOURCES, listenerX, listenerY, listenerZ, seconds) : 0;
 		final float[] mtr = MTR_SOUNDS[0];
 		final int[] mtrSources = MTR_SOURCES[0];
@@ -464,6 +464,19 @@ public final class SoundFilters {
 		EXTEfx.alFilterf(filter, EXTEfx.AL_LOWPASS_GAIN, Math.max(0, Math.min(1, gain)));
 		EXTEfx.alFilterf(filter, EXTEfx.AL_LOWPASS_GAINHF, Math.max(0, Math.min(1, gainHF)));
 		AL10.alSourcei(source, EXTEfx.AL_DIRECT_FILTER, filter);
+	}
+
+	/**
+	 * Occlusion of a vehicle sound. MTR places vehicle sounds at rail level, but the sound comes from the whole car body
+	 * above the rails: seen from a platform, the line to rail level runs through the platform edge while the train is in
+	 * plain view. Lines are checked to rail level and 1 and 2 blocks above it (not higher: a low tunnel roof would let a train be heard through the ground); the most open one counts.
+	 */
+	static int countVehicleOcclusion(double listenerX, double listenerY, double listenerZ, double x, double y, double z) {
+		int best = Integer.MAX_VALUE;
+		for (int height = 0; height <= 2 && best > 0; height++) {
+			best = Math.min(best, countOccludingBlocks(listenerX, listenerY, listenerZ, x, y + height, z));
+		}
+		return best;
 	}
 
 	/**

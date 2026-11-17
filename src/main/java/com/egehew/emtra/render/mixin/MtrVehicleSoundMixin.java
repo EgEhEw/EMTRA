@@ -1,7 +1,11 @@
 package com.egehew.emtra.render.mixin;
 
 import com.egehew.emtra.render.EmtraClientConfig;
+import com.egehew.emtra.sound.ApparentPosition;
 import com.egehew.emtra.sound.MtrSounds;
+import org.mtr.mapping.holder.SoundCategory;
+import org.mtr.mapping.holder.SoundEvent;
+import org.mtr.mapping.mapper.MovingSoundInstanceExtension;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -20,10 +24,64 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * between power, coast and brake from frame to frame (packs with BreakerDelay = 0 have no delay at all); a single
  * frame at volume 0 stopped the loop and the next frame restarted it from the beginning: a click each time. Smoothed,
  * a one-frame drop does not stop the loop, loops start from silence and fade to silence before they stop.</li>
+ * <li>Apparent position ({@link ApparentPosition}): the position Minecraft plays the loop at can be moved towards the
+ * opening the sound comes through, smoothly; EMTRA's own calculations keep using the vehicle's position.</li>
  * </ul>
  */
 @Mixin(targets = "org.mtr.mod.sound.VehicleLoopingSoundInstance", remap = false)
-public abstract class MtrVehicleSoundMixin {
+public abstract class MtrVehicleSoundMixin extends MovingSoundInstanceExtension implements ApparentPosition {
+
+	@Unique
+	private static final float EMTRA$MOVE_SECONDS = 0.25F;
+
+	@Unique
+	private boolean emtra$apparent;
+	@Unique
+	private double emtra$targetX = Double.NaN, emtra$targetY, emtra$targetZ;
+	@Unique
+	private double emtra$apparentX, emtra$apparentY, emtra$apparentZ;
+
+	protected MtrVehicleSoundMixin(SoundEvent soundEvent, SoundCategory soundCategory) {
+		super(soundEvent, soundCategory);
+	}
+
+	@Override
+	public void emtra$setApparentTarget(double x, double y, double z) {
+		emtra$targetX = x;
+		emtra$targetY = y;
+		emtra$targetZ = z;
+	}
+
+	@Override
+	public double emtra$trueX() {
+		return super.getX2();
+	}
+
+	@Override
+	public double emtra$trueY() {
+		return super.getY2();
+	}
+
+	@Override
+	public double emtra$trueZ() {
+		return super.getZ2();
+	}
+
+	/** Position Minecraft plays the sound at (getX() is final and calls this). */
+	@Override
+	public double getX2() {
+		return emtra$apparent ? emtra$apparentX : super.getX2();
+	}
+
+	@Override
+	public double getY2() {
+		return emtra$apparent ? emtra$apparentY : super.getY2();
+	}
+
+	@Override
+	public double getZ2() {
+		return emtra$apparent ? emtra$apparentZ : super.getZ2();
+	}
 
 	@Unique
 	private static final float EMTRA$ATTACK_SECONDS = 0.08F;
@@ -81,6 +139,31 @@ public abstract class MtrVehicleSoundMixin {
 
 	@Inject(method = "setData", at = @At("TAIL"), require = 0, remap = false)
 	private void emtra$recordPosition(CallbackInfo ci) {
+		// Glide towards the apparent position, or back to the vehicle, instead of jumping.
+		final boolean hasTarget = !Double.isNaN(emtra$targetX);
+		final double goalX = hasTarget ? emtra$targetX : super.getX2();
+		final double goalY = hasTarget ? emtra$targetY : super.getY2();
+		final double goalZ = hasTarget ? emtra$targetZ : super.getZ2();
+		if (!emtra$apparent) {
+			if (hasTarget) {
+				emtra$apparent = true;
+				emtra$apparentX = super.getX2();
+				emtra$apparentY = super.getY2();
+				emtra$apparentZ = super.getZ2();
+			}
+		}
+		if (emtra$apparent) {
+			final double step = 1 - Math.exp(-emtra$seconds / EMTRA$MOVE_SECONDS);
+			emtra$apparentX += (goalX - emtra$apparentX) * step;
+			emtra$apparentY += (goalY - emtra$apparentY) * step;
+			emtra$apparentZ += (goalZ - emtra$apparentZ) * step;
+			if (!hasTarget) {
+				final double dx = goalX - emtra$apparentX, dy = goalY - emtra$apparentY, dz = goalZ - emtra$apparentZ;
+				if (dx * dx + dy * dy + dz * dz < 0.04) {
+					emtra$apparent = false;
+				}
+			}
+		}
 		MtrSounds.recordPosition(this);
 	}
 
