@@ -22,24 +22,19 @@ public final class EmtraClientConfig {
 	public static volatile boolean RENDER_CATENARY_CACHE;
 	/** Log draw call statistics every 10 seconds. */
 	public static volatile boolean RENDER_STATS;
+	/** Write vehicle sound and OpenAL details to logs/emtra-sound.log once a second (for debugging sound problems). */
+	public static volatile boolean SOUND_DEBUG;
 
-	/** Keep MTR's looping vehicle sounds from being restarted every frame while Sound Physics Perfected replays them. */
-	public static final boolean SOUND_PHYSICS_COMPAT = true;
-	/**
-	 * Vehicle sounds are not replaced by Sound Physics Perfected's ray-traced copies (which update every 10 ticks and
-	 * could not follow BVE sounds that change every frame); EMTRA occludes them, SPP's reverb still applies.
-	 */
-	public static final boolean SPP_BYPASS_VEHICLE_SOUNDS = true;
 	/** Smooth MTR vehicle loop volume and pitch, so flickering motor output does not stop and restart loops (clicks). */
 	public static final boolean SMOOTH_VEHICLE_SOUNDS = true;
-	/** Cap MTR vehicle loop volume at 1: above 1 Minecraft only multiplies the audible range (BVE motors x5 = 640 blocks). */
+	/**
+	 * Cap MTR vehicle loop volume at 1: above 1 Minecraft only multiplies the audible range (BVE motors x5 = 640 blocks).
+	 */
 	public static final boolean LIMIT_VEHICLE_SOUND_RANGE = true;
 	/** Occlude MTR vehicle sounds by the blocks between them and the listener (trains in tunnels). */
 	public static final boolean MTR_SOUND_OCCLUSION = true;
 	/** Muffle sounds while riding a train (experimental, off by default). */
 	public static volatile boolean TRAIN_MUFFLE;
-	/** Also muffle the train's own sounds (motor, running noise) while riding it, as heard through the car body. */
-	public static final boolean TRAIN_MUFFLE_OWN_VEHICLE = false;
 	/** Volume of outside sounds at full muffle, in percent. */
 	public static volatile int TRAIN_MUFFLE_VOLUME;
 	/** High frequencies left in outside sounds at full muffle, in percent (lower = more muffled). */
@@ -55,7 +50,7 @@ public final class EmtraClientConfig {
 	private static final String COMMENT = "EMTRA client options (also editable in game: Mods > EMTRA > Config). "
 			+ "renderInstancing, renderRailCache, renderCatenaryCache: render optimizations for MTR models, rails and MSD catenary. "
 			+ "trainMuffle* (experimental): muffles sounds while riding a train (volume/treble/doorOpen in percent, fades in ms). "
-			+ "Sound Physics Perfected compatibility and train sound fixes are always on.";
+			+ "Train sound fixes are always on.";
 
 	static {
 		final Properties defaults = new Properties();
@@ -63,6 +58,7 @@ public final class EmtraClientConfig {
 		defaults.setProperty("renderRailCache", "true");
 		defaults.setProperty("renderCatenaryCache", "true");
 		defaults.setProperty("renderStats", "false");
+		defaults.setProperty("soundDebug", "false");
 		defaults.setProperty("trainMuffle", "false");
 		defaults.setProperty("trainMuffleVolume", "55");
 		defaults.setProperty("trainMuffleTreble", "10");
@@ -74,11 +70,13 @@ public final class EmtraClientConfig {
 		boolean missing = true;
 		try {
 			if (Files.exists(FILE)) {
+				final Properties saved = new Properties();
 				try (InputStream inputStream = Files.newInputStream(FILE)) {
-					properties.load(inputStream);
+					saved.load(inputStream);
 				}
-				// Rewrite when keys are missing or left over from older versions (settings that are now always on).
-				missing = !properties.stringPropertyNames().equals(defaults.stringPropertyNames());
+				properties.putAll(saved);
+				// Rewrite when keys are missing or left over from older versions (obsolete settings).
+				missing = !saved.stringPropertyNames().equals(defaults.stringPropertyNames());
 			}
 		} catch (Exception e) {
 			System.err.println("[EMTRA] Could not read " + FILE + ": " + e);
@@ -87,6 +85,7 @@ public final class EmtraClientConfig {
 		RENDER_RAIL_CACHE = bool(properties, "renderRailCache", true);
 		RENDER_CATENARY_CACHE = bool(properties, "renderCatenaryCache", true);
 		RENDER_STATS = bool(properties, "renderStats", false);
+		SOUND_DEBUG = bool(properties, "soundDebug", false);
 		TRAIN_MUFFLE = bool(properties, "trainMuffle", false);
 		TRAIN_MUFFLE_VOLUME = integer(properties, "trainMuffleVolume", 55, 0, 100);
 		TRAIN_MUFFLE_TREBLE = integer(properties, "trainMuffleTreble", 10, 0, 100);
@@ -107,6 +106,7 @@ public final class EmtraClientConfig {
 		properties.setProperty("renderRailCache", String.valueOf(RENDER_RAIL_CACHE));
 		properties.setProperty("renderCatenaryCache", String.valueOf(RENDER_CATENARY_CACHE));
 		properties.setProperty("renderStats", String.valueOf(RENDER_STATS));
+		properties.setProperty("soundDebug", String.valueOf(SOUND_DEBUG));
 		properties.setProperty("trainMuffle", String.valueOf(TRAIN_MUFFLE));
 		properties.setProperty("trainMuffleVolume", String.valueOf(TRAIN_MUFFLE_VOLUME));
 		properties.setProperty("trainMuffleTreble", String.valueOf(TRAIN_MUFFLE_TREBLE));

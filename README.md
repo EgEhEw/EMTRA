@@ -27,7 +27,6 @@ Always active on the client:
 - MTR vehicle sounds: looping BVE sounds (motor, run, flange, noise...) change volume and pitch smoothly, so a motor output that flickers from frame to frame no longer stops and restarts loops (clicks). Loop volume is capped at 1, which only limits the audible range to the one the pack's `sounds.json` gives (BVE packs with `MotorVolumeMultiply = 5` were heard 640 blocks away). One-shot sounds play once per event instead of once per scheduled sound.
 - Train sounds follow the air: with a clear line to the car body (rail level up to 2 blocks above, so a train beside a raised platform is heard) they are unchanged; otherwise the sound has to travel through tunnels, stations and stairwells. A train around a tunnel bend or behind a platform wall is heard from the direction of the opening it comes through, as far away as the path is long, quieter and duller the longer the detour; a train under solid ground is not heard at all. Thin walls (1-2 blocks) still let some sound through.
 - Cars that are not drawn (behind a bend or a wall) keep updating their sounds within hearing range, instead of freezing at their last volume and position.
-- Sound Physics Perfected compatibility: vehicle sounds (MTR, JCM and FangSu scripts) are not replaced by SPP's ray-traced copies, which were updated twice a second and could not follow BVE sounds (stacked, jumping, leaking sounds); SPP's reverb still applies to them, combined with EMTRA's filters. SPP's permeation count no longer stops at its limit (30 blocks of ground counted as 3).
 
 ## Client options
 
@@ -44,7 +43,7 @@ Lift models are always reused: MTR builds a new lift model for every lift on eve
 
 Sound
 
-- `trainMuffle` (default `false`, experimental): while riding a train, everything outside and the train's own motor and run sounds are muffled as if heard through the car body; its doors and other sounds stay clear. The muffle fades in and out when boarding and alighting and follows the doors as they open and close.
+- `trainMuffle` (default `false`, experimental): while riding a train, exterior sounds and the train's own motor, run, `airhigh` and `airzero` sounds get the full cabin filter. The riding train's other sounds get 15% of that effect. The filter fades in and out when boarding and alighting and follows the doors as they open and close.
 - `trainMuffleVolume` (default `55`) and `trainMuffleTreble` (default `10`): volume and high frequencies left at full muffle, in percent.
 - `trainMuffleDoorOpen` (default `75`): how much of the muffle open doors remove, in percent.
 - `trainMuffleFadeMs` (default `700`) and `trainMuffleDoorFadeMs` (default `250`): fade times for boarding/alighting and for the doors.

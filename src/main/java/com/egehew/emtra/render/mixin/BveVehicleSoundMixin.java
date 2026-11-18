@@ -6,7 +6,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Marks the motor and run loops of each BVE vehicle sound set: the only own-train sounds muffled while riding. */
+/** Marks the motor and run loops of each BVE vehicle sound set: so they get the full cabin filter even with custom sound IDs. */
 @Mixin(targets = "org.mtr.mod.sound.BveVehicleSound", remap = false)
 public abstract class BveVehicleSoundMixin {
 

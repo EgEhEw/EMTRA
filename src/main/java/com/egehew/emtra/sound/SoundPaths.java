@@ -213,7 +213,9 @@ final class SoundPaths {
 
 		// Around through the air: the nearest mapped block of the car body (rail level up to 2 above) or next to it
 		final Field field = current;
-		if (field != null) {
+		// The previous map remains available while the new one grows. After the listener moves
+		// to the other side of a sealed roof it no longer describes a path from the listener.
+		if (field != null && field.distance(floor(listenerX), floor(listenerY), floor(listenerZ)) >= 0) {
 			final int targetX = floor(x), targetY = floor(y), targetZ = floor(z);
 			int best = Integer.MAX_VALUE;
 			int bestX = 0, bestY = 0, bestZ = 0;

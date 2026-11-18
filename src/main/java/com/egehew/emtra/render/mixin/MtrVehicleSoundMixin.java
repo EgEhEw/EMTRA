@@ -17,7 +17,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * MTR's looping vehicle sounds (BVE motor, run, flange, noise, shoe, compressor loops), set by MTR every frame with
  * setData(volume, pitch, blockPos), which stops the loop when the volume is 0 and starts it again when it is above 0.
  * <ul>
- * <li>Tracked and marked for Sound Physics Perfected's blacklist (see {@link MtrSounds}); their recent positions are
+ * <li>Tracked by {@link MtrSounds}; their recent positions are
  * recorded so their OpenAL sources can be found while the train moves.</li>
  * <li>Volume above 1 only multiplies the audible range in Minecraft (BVE motors x5 = 640 blocks): capped at 1.</li>
  * <li>Volume and pitch are smoothed. MTR's motor output follows the sign of the client's speed change, which flickers
@@ -36,6 +36,7 @@ public abstract class MtrVehicleSoundMixin extends MovingSoundInstanceExtension 
 
 	@Unique
 	private boolean emtra$apparent;
+
 	@Unique
 	private double emtra$targetX = Double.NaN, emtra$targetY, emtra$targetZ;
 	@Unique
@@ -112,7 +113,7 @@ public abstract class MtrVehicleSoundMixin extends MovingSoundInstanceExtension 
 		float target = EmtraClientConfig.LIMIT_VEHICLE_SOUND_RANGE ? Math.min(volume, 1) : volume;
 		if (!EmtraClientConfig.SMOOTH_VEHICLE_SOUNDS) {
 			emtra$volume = target;
-			return target;
+			return emtra$volume;
 		}
 		target = Math.max(0, target);
 		final float time = target > emtra$volume ? EMTRA$ATTACK_SECONDS : EMTRA$RELEASE_SECONDS;
@@ -165,10 +166,5 @@ public abstract class MtrVehicleSoundMixin extends MovingSoundInstanceExtension 
 			}
 		}
 		MtrSounds.recordPosition(this);
-	}
-
-	@Override
-	public String toString() {
-		return MtrSounds.SPP_MARKER + "@" + Integer.toHexString(System.identityHashCode(this));
 	}
 }

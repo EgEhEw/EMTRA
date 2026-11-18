@@ -19,7 +19,7 @@ import org.mtr.mod.data.VehicleExtension;
  */
 public final class HiddenVehicleSounds {
 
-	private static final double RANGE = 128;
+	private static final double RANGE = 192;
 	private static boolean broken;
 
 	private HiddenVehicleSounds() {

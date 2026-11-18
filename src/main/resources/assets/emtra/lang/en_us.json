@@ -7,6 +7,7 @@
   "options.emtra.on": "On",
   "options.emtra.off": "Off",
   "options.emtra.section_sound": "Sound",
+  "options.emtra.sound_debug": "Sound debug log (logs/emtra-sound.log)",
   "options.emtra.train_muffle": "Muffle sounds while riding (experimental)",
   "options.emtra.train_muffle_volume": "Volume while riding",
   "options.emtra.train_muffle_treble": "Treble while riding",

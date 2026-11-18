@@ -1,12 +1,14 @@
 package com.egehew.emtra.sound;
 
-import com.egehew.emtra.render.EmtraClientConfig;
 import org.mtr.mapping.holder.BlockPos;
+import org.mtr.mapping.holder.ClientWorld;
+import org.mtr.mapping.holder.LightType;
 import org.mtr.mapping.holder.MinecraftClient;
 import org.mtr.mapping.holder.MovingSoundInstanceAbstractMapping;
 import org.mtr.mapping.holder.SoundCategory;
 import org.mtr.mapping.holder.SoundEvent;
 import org.mtr.mapping.holder.SoundInstance;
+import org.mtr.mapping.holder.SoundManager;
 import org.mtr.mapping.mapper.MovingSoundInstanceExtension;
 
 import java.util.Arrays;
@@ -15,67 +17,101 @@ import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.regex.Pattern;
 
 /**
  * Vehicle sounds: MTR's looping motor/running sounds and one-shot door/brake/compressor sounds, and the sounds of
  * vehicle scripts (JCM scripting, FangSu).
  * <ul>
  * <li>Their positions are tracked so {@link SoundFilters} can find their OpenAL sources and occlude them.</li>
- * <li>Their toString carries {@link #SPP_MARKER}, which EMTRA adds to Sound Physics Perfected's sound blacklist, so
- * SPP leaves them alone (it moved underground trains to the surface and played door sounds almost silently).</li>
  * <li>One-shot sounds: MTR's ScheduledSound played every scheduled sound once per scheduled entry (n entries in a tick
  * = each sound n times on top of itself, clipping). Each entry now plays once.</li>
  * </ul>
  */
 public final class MtrSounds {
 
-	public static final String SPP_MARKER = "emtra:mtr_vehicle_sound";
-
 	private static final Set<MovingSoundInstanceAbstractMapping> SOUNDS = Collections.newSetFromMap(new WeakHashMap<>());
+	private static final ThreadLocal<Long> UPDATING_VEHICLE = new ThreadLocal<>();
+	private static final Map<Object, Long> OWNERS = new WeakHashMap<>();
 	private static final Map<Object, Boolean> PLAYED_THIS_FLUSH = new IdentityHashMap<>();
 	private static final Map<Object, float[]> SMOOTHED = new WeakHashMap<>();
-	/** BVE motor and run loops: inside the riding train these are muffled, its other sounds are not. */
+	/** BVE metadata identifies motor and run loops even when a pack uses custom sound IDs. */
 	private static final Set<Object> MOTOR_AND_RUN = Collections.newSetFromMap(new WeakHashMap<>());
-	private static final Map<Object, Boolean> MOTOR_OR_RUN_BY_ID = new WeakHashMap<>();
+	private static final Map<Object, Boolean> FULL_MUFFLE_BY_ID = new WeakHashMap<>();
 	/**
 	 * Last distinct positions of each sound (x, y, z triples, newest first). Minecraft copies an instance's position to
 	 * its OpenAL source once per tick while MTR moves it every frame, so a moving train's source sits at one of these.
 	 */
 	private static final Map<Object, float[]> HISTORY = new WeakHashMap<>();
 	private static final int HISTORY_LENGTH = 8;
-	/** Sound id paths of motor/run tracks in any numbering: r142bve_motor0, r142bve_run3, pack/run12, motor... */
-	private static final java.util.regex.Pattern MOTOR_OR_RUN_ID = java.util.regex.Pattern.compile("(^|[_/.-])(motor|run)\\d*$", java.util.regex.Pattern.CASE_INSENSITIVE);
+	/** Examples include pack_motor2, pack/run_fast and pack_airzero. */
+	private static final Pattern FULL_MUFFLE_ID = Pattern.compile("(^|[_/.-])(?:(?:motor|run)[^/]*|airhigh|airzero)$", Pattern.CASE_INSENSITIVE);
 	private static java.lang.reflect.Field holderField, motorField, runField;
 	private static boolean tagFailed;
 	private static final Map<Long, double[]> OCCLUSION_CACHE = new java.util.HashMap<>();
 	private static final float[] REACH = new float[2];
 	private static final double[] APPARENT = new double[3];
+	/** Unmodified gain and position when occlusion is disabled. */
+	private static final float[] REACH_CLEAR_GAIN = {1, 1};
+	private static final double[] CLEAR_REACH = {1, 1, Double.NaN, 0, 0};
 	private static final double MAX_DISTANCE = 128;
 	private static final float OCCLUSION_FADE_SECONDS = 0.3F;
-	private static final double[] COPY_POSITION = new double[3];
-
 	private MtrSounds() {
+	}
+
+	public static void withVehicle(long vehicleId, Runnable update) {
+		final Long previous = UPDATING_VEHICLE.get();
+		UPDATING_VEHICLE.set(vehicleId);
+		try {
+			update.run();
+		} finally {
+			if (previous == null) {
+				UPDATING_VEHICLE.remove();
+			} else {
+				UPDATING_VEHICLE.set(previous);
+			}
+		}
+	}
+
+	public static Long updatingVehicle() {
+		return UPDATING_VEHICLE.get();
 	}
 
 	public static void register(Object sound) {
 		if (sound instanceof MovingSoundInstanceAbstractMapping) {
 			synchronized (SOUNDS) {
 				SOUNDS.add((MovingSoundInstanceAbstractMapping) sound);
+				recordOwner(sound);
 			}
 		}
 	}
 
-	/** Output of {@link #collect}: per vehicle sound, x, y, z (where its OpenAL source is), gain, gainHF, own vehicle. */
+	private static void recordOwner(Object sound) {
+		final Long owner = updatingVehicle();
+		if (owner != null) {
+			OWNERS.put(sound, owner);
+		}
+	}
+
+	private static double[] reachFromVehicle(double listenerX, double listenerY, double listenerZ, double x, double y, double z) {
+		final long key = ((long) Math.floor(x) & 0x3FFFFFF) << 38 | ((long) Math.floor(z) & 0x3FFFFFF) << 12 | ((long) Math.floor(y) & 0xFFF);
+		double[] reach = OCCLUSION_CACHE.get(key);
+		if (reach == null) {
+			SoundPaths.evaluate(listenerX, listenerY, listenerZ, x, y, z, REACH, APPARENT);
+			reach = new double[]{REACH[0], REACH[1], APPARENT[0], APPARENT[1], APPARENT[2]};
+			OCCLUSION_CACHE.put(key, reach);
+		}
+		return reach;
+	}
+
+	/** Output of {@link #collect}: per vehicle sound, x, y, z (where its OpenAL source is), gain, gainHF, mild cabin filter flag. */
 	static final int STRIDE = 6;
 
 	/**
-	 * Every playing vehicle sound near the listener. A sound is either played directly (its source is found by
-	 * position) or replaced by a Sound Physics Perfected copy (its source id is known, or found by the copy's
-	 * position). gain/gainHF: EMTRA's smoothed factor for it, from the blocks on the straight line between the
-	 * listener and the vehicle (see {@link SoundPaths}): through the air around obstacles, or silent.
-	 * Returns the count; sources[i] is the OpenAL source or 0.
+	 * Collects playing vehicle sounds near the listener for occlusion and cabin muffle.
+	 * Returns the count. sources[i] is the OpenAL source, or 0 when it must be matched by position.
 	 */
-	static int collect(float[][] holder, int[][] sourceHolder, double listenerX, double listenerY, double listenerZ, float seconds) {
+	static int collect(float[][] holder, int[][] sourceHolder, double listenerX, double listenerY, double listenerZ, float seconds, boolean cabinFilter) {
 		synchronized (SOUNDS) {
 			float[] array = holder[0];
 			if (array.length < SOUNDS.size() * STRIDE) {
@@ -88,8 +124,9 @@ public final class MtrSounds {
 				sourceHolder[0] = sources;
 			}
 			OCCLUSION_CACHE.clear();
-			final org.mtr.mapping.holder.SoundManager soundManager = MinecraftClient.getInstance().getSoundManager();
+			final SoundManager soundManager = MinecraftClient.getInstance().getSoundManager();
 			final boolean occlusion = SoundFilters.occlusionActive();
+			final boolean debug = SoundDebug.beginPass(listenerX, listenerY, listenerZ, occlusion);
 			int count = 0;
 			for (final MovingSoundInstanceAbstractMapping sound : SOUNDS) {
 				try {
@@ -99,43 +136,12 @@ public final class MtrSounds {
 					final double y = apparentPosition == null ? sound.getY2() : apparentPosition.emtra$trueY();
 					final double z = apparentPosition == null ? sound.getZ2() : apparentPosition.emtra$trueZ();
 					final double dx = x - listenerX, dy = y - listenerY, dz = z - listenerZ;
-					if (dx * dx + dy * dy + dz * dz > MAX_DISTANCE * MAX_DISTANCE) {
+					if (dx * dx + dy * dy + dz * dz > MAX_DISTANCE * MAX_DISTANCE || !soundManager.isPlaying(new SoundInstance(sound))) {
 						continue;
 					}
-					// Where is it playing?
-					// The exact OpenAL source from Minecraft's sound engine where possible: all loops of a car play at the
-					// same position, so positions alone cannot tell the motor from the noise loop.
-					int source = 0;
-					double sourceX = sound.getX2(), sourceY = sound.getY2(), sourceZ = sound.getZ2();
-					final boolean direct = soundManager.isPlaying(new SoundInstance(sound));
-					if (direct) {
-						source = SoundSources.sourceOf(sound);
-					} else {
-						final Object copy = SoundPhysicsCompat.copyOf(sound);
-						if (copy == null) {
-							continue;
-						}
-						source = SoundSources.sourceOf(copy);
-						if (source == 0) {
-							source = SoundPhysicsCompat.copySource(copy);
-						}
-						if (source == 0) {
-							if (!SoundPhysicsCompat.copyPosition(copy, COPY_POSITION)) {
-								continue;
-							}
-							sourceX = COPY_POSITION[0];
-							sourceY = COPY_POSITION[1];
-							sourceZ = COPY_POSITION[2];
-						}
-					}
-					// How it reaches the listener from the vehicle itself (not from where SPP moved the sound)
-					final long key = (long) Math.floor(x) * 31L * 31L * 1024L + (long) Math.floor(y) * 31L * 1024L + (long) Math.floor(z);
-					double[] reach = OCCLUSION_CACHE.get(key);
-					if (reach == null) {
-						SoundPaths.evaluate(listenerX, listenerY, listenerZ, x, y, z, REACH, APPARENT);
-						reach = new double[]{REACH[0], REACH[1], APPARENT[0], APPARENT[1], APPARENT[2]};
-						OCCLUSION_CACHE.put(key, reach);
-					}
+					final int source = SoundSources.sourceOf(sound);
+					final double sourceX = sound.getX2(), sourceY = sound.getY2(), sourceZ = sound.getZ2();
+					final double[] reach = occlusion ? reachFromVehicle(listenerX, listenerY, listenerZ, x, y, z) : CLEAR_REACH;
 					if (apparentPosition != null) {
 						if (occlusion && !Double.isNaN(reach[2])) {
 							apparentPosition.emtra$setApparentTarget(reach[2], reach[3], reach[4]);
@@ -150,16 +156,24 @@ public final class MtrSounds {
 						targetGainHF = (float) reach[1];
 					}
 					float[] smoothed = SMOOTHED.get(sound);
-					if (smoothed == null) {
+					if (!occlusion) {
+						smoothed = REACH_CLEAR_GAIN;
+					} else if (smoothed == null) {
 						smoothed = new float[]{targetGain, targetGainHF};
 						SMOOTHED.put(sound, smoothed);
 					} else {
 						smoothed[0] = SoundFilters.approach(smoothed[0], targetGain, OCCLUSION_FADE_SECONDS, seconds);
 						smoothed[1] = SoundFilters.approach(smoothed[1], targetGainHF, OCCLUSION_FADE_SECONDS, seconds);
 					}
-					// 1: a sound of the riding train that stays clear of the muffle; motor and run loops are muffled like outside.
-					final float own = SoundFilters.insideRidingVehicle(x, y, z) && !isMotorOrRun(sound) ? 1 : 0;
-					final float[] history = source == 0 && direct ? HISTORY.get(sound) : null;
+					if (debug) {
+						SoundDebug.sound(sound, x, y, z, source, targetGain, smoothed[0]);
+					}
+					if (!cabinFilter && smoothed[0] >= 0.999F && smoothed[1] >= 0.999F) {
+						continue;
+					}
+					final boolean mildCabinFilter = cabinFilter && !needsFullCabinMuffle(sound)
+							&& SoundFilters.belongsToRidingVehicle(OWNERS.get(sound), x, y, z);
+					final float[] history = source == 0 ? HISTORY.get(sound) : null;
 					final int rows = 1 + (history == null ? 0 : HISTORY_LENGTH);
 					if (array.length < (count + rows) * STRIDE || sources.length < count + rows) {
 						array = Arrays.copyOf(array, (count + rows) * STRIDE * 2);
@@ -187,7 +201,7 @@ public final class MtrSounds {
 						array[i + 2] = rowZ;
 						array[i + 3] = smoothed[0];
 						array[i + 4] = smoothed[1];
-						array[i + 5] = own;
+						array[i + 5] = mildCabinFilter ? 1 : 0;
 						sources[count] = source;
 						count++;
 					}
@@ -199,6 +213,43 @@ public final class MtrSounds {
 		}
 	}
 
+	/** Per block: {tunnel factor, nanoTime read}. */
+	private static final Map<Long, double[]> TUNNEL_CACHE = new java.util.HashMap<>();
+	private static final long TUNNEL_REFRESH_NANOS = 1_000_000_000L;
+
+	/**
+	 * For the sound debug log. 0 under the open sky, 1 deep in a tunnel: from the sky light 1 to 3 blocks above the sound (the car body), which
+	 * fades over the first blocks inside a tunnel mouth, so the change is gradual. Sky light the client has not computed
+	 * yet reads as 15 (outside) for a moment; the result is smoothed with the gain anyway. Render thread.
+	 */
+	static double tunnelFactor(double x, double y, double z) {
+		final int bx = (int) Math.floor(x), by = (int) Math.floor(y), bz = (int) Math.floor(z);
+		final long key = ((long) bx & 0x3FFFFFF) << 38 | ((long) bz & 0x3FFFFFF) << 12 | (by & 0xFFF);
+		final long now = System.nanoTime();
+		double[] cached = TUNNEL_CACHE.get(key);
+		if (cached != null && now - (long) cached[1] < TUNNEL_REFRESH_NANOS) {
+			return cached[0];
+		}
+		final ClientWorld world = MinecraftClient.getInstance().getWorldMapped();
+		if (world == null) {
+			return 0;
+		}
+		int sky = 0;
+		for (int up = 1; up <= 3; up++) {
+			sky = Math.max(sky, world.getLightLevel(LightType.getSkyMapped(), new BlockPos(bx, by + up, bz)));
+		}
+		final double factor = Math.max(0, Math.min(1, (12 - sky) / 10.0));
+		if (TUNNEL_CACHE.size() > 4096) {
+			TUNNEL_CACHE.clear();
+		}
+		TUNNEL_CACHE.put(key, new double[]{factor, now});
+		return factor;
+	}
+
+	static double distanceTo(double dx, double dy, double dz) {
+		return Math.sqrt(dx * dx + dy * dy + dz * dz);
+	}
+
 	/** Called whenever a vehicle sound was moved (MTR setData, JCM setPos). */
 	public static void recordPosition(Object sound) {
 		if (!(sound instanceof MovingSoundInstanceAbstractMapping)) {
@@ -207,6 +258,7 @@ public final class MtrSounds {
 		final MovingSoundInstanceAbstractMapping instance = (MovingSoundInstanceAbstractMapping) sound;
 		final float x = (float) instance.getX2(), y = (float) instance.getY2(), z = (float) instance.getZ2();
 		synchronized (SOUNDS) {
+			recordOwner(sound);
 			float[] history = HISTORY.get(sound);
 			if (history == null) {
 				history = new float[HISTORY_LENGTH * 3];
@@ -257,35 +309,25 @@ public final class MtrSounds {
 			}
 		} catch (Throwable t) {
 			tagFailed = true;
-			com.egehew.emtra.EmtraMod.LOGGER.warn("Could not read MTR's BVE motor/run sounds, the whole riding train stays clear of the muffle: {}", t.toString());
+			com.egehew.emtra.EmtraMod.LOGGER.warn("Could not read MTR's BVE motor/run sounds, using sound IDs to classify motor/run sounds: {}", t.toString());
 		}
 	}
 
-	/** Motor or run track: tagged from MTR's BVE sound set, or recognised by its sound id (run0, run1, run2...). */
-	private static boolean isMotorOrRun(MovingSoundInstanceAbstractMapping sound) {
+	/** Own-train sounds that should get the same cabin muffle as exterior sounds. */
+	private static boolean needsFullCabinMuffle(MovingSoundInstanceAbstractMapping sound) {
 		if (MOTOR_AND_RUN.contains(sound)) {
 			return true;
 		}
-		Boolean byId = MOTOR_OR_RUN_BY_ID.get(sound);
+		Boolean byId = FULL_MUFFLE_BY_ID.get(sound);
 		if (byId == null) {
 			try {
-				byId = MOTOR_OR_RUN_ID.matcher(sound.getId2().getPath()).find();
+				byId = FULL_MUFFLE_ID.matcher(sound.getId2().getPath()).find();
 			} catch (Throwable t) {
 				byId = false;
 			}
-			MOTOR_OR_RUN_BY_ID.put(sound, byId);
+			FULL_MUFFLE_BY_ID.put(sound, byId);
 		}
 		return byId;
-	}
-
-	/** toString of one tracked sound, to check that the Sound Physics Perfected marker is applied. */
-	static String sample() {
-		synchronized (SOUNDS) {
-			for (final MovingSoundInstanceAbstractMapping sound : SOUNDS) {
-				return sound.getClass().getName() + " -> " + sound;
-			}
-			return null;
-		}
 	}
 
 	static boolean isEmpty() {
@@ -299,31 +341,40 @@ public final class MtrSounds {
 	}
 
 	/** Replaces ScheduledSound's ClientWorld.playSoundAtBlockCenter call (one play per scheduled entry). */
-	public static void playScheduled(Object scheduledSound, BlockPos blockPos, SoundEvent soundEvent, SoundCategory category, float volume, float pitch, Runnable vanilla) {
+	public static void playScheduled(Object scheduledSound, Long owner, BlockPos blockPos, SoundEvent soundEvent, SoundCategory category, float volume, float pitch, Runnable vanilla) {
 		if (PLAYED_THIS_FLUSH.put(scheduledSound, Boolean.TRUE) != null) {
 			return;
 		}
-		playOneShot(blockPos.getX() + 0.5, blockPos.getY() + 0.5, blockPos.getZ() + 0.5, soundEvent, category, volume, pitch, vanilla);
+		playOneShot(owner, blockPos.getX() + 0.5, blockPos.getY() + 0.5, blockPos.getZ() + 0.5, soundEvent, category, volume, pitch, vanilla);
 	}
 
 	/**
 	 * Plays a one-shot vehicle sound (MTR, JCM scripts, FangSu scripts) as an EMTRA sound instance, so it is known as a
-	 * vehicle sound (occlusion, kept clear of the riding muffle). It starts before the next filter update, so whether
+	 * vehicle sound for occlusion and cabin muffle. It starts before the next filter update, so whether
 	 * and how loud it reaches the listener ({@link SoundPaths}) is applied right away.
 	 */
 	public static void playOneShot(double x, double y, double z, SoundEvent soundEvent, SoundCategory category, float volume, float pitch, Runnable vanilla) {
+		playOneShot(updatingVehicle(), x, y, z, soundEvent, category, volume, pitch, vanilla);
+	}
+
+	private static void playOneShot(Long owner, double x, double y, double z, SoundEvent soundEvent, SoundCategory category, float volume, float pitch, Runnable vanilla) {
 		try {
 			final float[] occlusion = SoundFilters.occlusionAt(x, y, z);
 			if (occlusion[2] > 0) {
 				// More blocks than the limit between the listener and the vehicle: not heard at all.
 				return;
 			}
-			final float occlusionGain = SoundFilters.occlusionActive() ? occlusion[0] : 1;
+			final float occlusionGain = occlusion[0];
 			if (occlusionGain < 0.01F) {
 				return;
 			}
 			final OneShotSound sound = new OneShotSound(soundEvent, category, volume * occlusionGain, pitch, x, y, z);
 			register(sound);
+			if (owner != null) {
+				synchronized (SOUNDS) {
+					OWNERS.put(sound, owner);
+				}
+			}
 			MinecraftClient.getInstance().getSoundManager().play(new SoundInstance(sound));
 		} catch (Throwable t) {
 			vanilla.run();
@@ -344,11 +395,6 @@ public final class MtrSounds {
 
 		@Override
 		public void tick2() {
-		}
-
-		@Override
-		public String toString() {
-			return SPP_MARKER + "@" + Integer.toHexString(System.identityHashCode(this));
 		}
 	}
 }

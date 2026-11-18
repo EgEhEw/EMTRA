@@ -4,7 +4,6 @@ import com.egehew.emtra.EmtraMod;
 import com.egehew.emtra.render.EmtraClientConfig;
 import com.egehew.emtra.render.mixin.VehicleRidingMovementAccessor;
 import org.lwjgl.openal.AL10;
-import org.lwjgl.openal.AL11;
 import org.lwjgl.openal.ALC10;
 import org.lwjgl.openal.EXTEfx;
 import org.mtr.core.data.VehicleCar;
@@ -20,18 +19,15 @@ import org.mtr.mod.data.VehicleExtension;
 import java.util.Arrays;
 
 /**
- * EFX low-pass filters on OpenAL sources, for two effects that are multiplied together (and with the muffle Sound
- * Physics Perfected puts on its sounds):
+ * EFX low-pass filters on OpenAL sources for two effects that are multiplied together.
  * <ul>
- * <li><b>Occlusion of MTR vehicle sounds</b>: blocks between the listener and the sound absorb it, so a train in a
- * tunnel is not heard on the surface. Used instead of Sound Physics Perfected for MTR sounds (see {@link MtrSounds}),
- * skipped when Sound Physics Remastered is installed (it occludes every sound itself).</li>
+ * <li><b>Occlusion of MTR vehicle sounds</b>: blocks between the listener and the sound absorb it. A vehicle
+ * sound with no path to the listener through the air or through a thin wall ({@link SoundPaths}) is silent.
+ * Sound Physics Remastered handles occlusion when installed.</li>
  * <li><b>Train muffle</b>: while riding, sounds are muffled as if heard through the car body. It fades in when
  * boarding, out when alighting, and is reduced while the doors are open (following MTR's door value).
- * By default the riding train's own vehicle sounds (its loops and doors) are not muffled; everything else is.
+ * The riding train's other sounds get a mild filter, while its motor, run and air sounds use the full filter.
  * </li>
- * <li><b>Vehicle sound paths</b>: a vehicle sound that can reach the listener neither in a straight line nor through
- * the air around obstacles ({@link SoundPaths}) is silent, whatever path Sound Physics Perfected found for it.</li>
  * </ul>
  * Only valid OpenAL queries are used (a source's direct filter cannot be read back in OpenAL Soft, and an invalid
  * query leaves an error that Minecraft's sound thread would report as its own and then drop the sound), and any
@@ -43,25 +39,13 @@ public final class SoundFilters {
 	private static final int MAX_SOURCE_ID = 384;
 	private static final long UPDATE_INTERVAL_NANOS = 50_000_000L;
 	private static final float EPSILON = 0.002F;
+	private static final float OWN_SOUND_MUFFLE_SCALE = 0.15F;
 	private static final int MAX_OCCLUDING_BLOCKS = 12;
-	private static final double OCCLUSION_GAIN_PER_BLOCK = 0.55;
-	private static final double OCCLUSION_HF_PER_BLOCK = 0.35;
 
 	private static final int[] OUR_FILTER = new int[MAX_SOURCE_ID + 1];
 	private static final boolean[] ATTACHED = new boolean[MAX_SOURCE_ID + 1];
-	/** Muffle Sound Physics Perfected put on a source (it reuses one filter object, so values are kept per source). */
-	private static final boolean[] RECORDED = new boolean[MAX_SOURCE_ID + 1];
-	private static final float[] RECORDED_GAIN = new float[MAX_SOURCE_ID + 1];
-	private static final float[] RECORDED_GAIN_HF = new float[MAX_SOURCE_ID + 1];
-	/** EMTRA's own factor on each source (occlusion x muffle, without SPP's muffle), also applied to SPP's reverb send. */
-	private static final float[] FACTOR_GAIN = new float[MAX_SOURCE_ID + 1];
-	private static final float[] FACTOR_GAIN_HF = new float[MAX_SOURCE_ID + 1];
-	private static final int[] SEND_FILTER = new int[MAX_SOURCE_ID + 1];
 
-	static {
-		Arrays.fill(FACTOR_GAIN, 1);
-		Arrays.fill(FACTOR_GAIN_HF, 1);
-	}
+	private static final boolean REMASTERED_LOADED = remasteredLoaded();
 
 	private static final float[] X = new float[1];
 	private static final float[] Y = new float[1];
@@ -74,15 +58,14 @@ public final class SoundFilters {
 	/** Vehicle cars as capsules: x1, y1, z1, x2, y2, z2, radius. */
 	private static double[] capsules = new double[0];
 	private static int capsuleCount;
+	private static long cabinVehicleId;
 
 	private static float muffle;
 	/** Riding (0..1, fades with the boarding fade time) and door openness (0..1, fades with the door fade time). */
 	private static float riding, door;
 	private static float doorTarget;
 	private static boolean anyAttached;
-	private static boolean factorsSet;
 	private static long lastNanos;
-	private static long lastBlacklistSync;
 	private static long context;
 	private static boolean efx;
 	private static boolean broken;
@@ -102,31 +85,25 @@ public final class SoundFilters {
 		final float seconds = lastNanos == 0 ? 0 : Math.min(0.25F, (now - lastNanos) / 1E9F);
 		lastNanos = now;
 		try {
-			if (now - lastBlacklistSync > 1_000_000_000L) {
-				lastBlacklistSync = now;
-				SoundPhysicsCompat.syncBlacklist();
-			}
 			// Boarding/alighting and the doors fade separately: the doors with their own, longer fade, so opening and
 			// closing them lets the outside in gradually instead of at once.
 			riding = approach(riding, findMuffleTarget(), EmtraClientConfig.TRAIN_MUFFLE_FADE_MS / 1000F, seconds);
+			if (riding == 0) {
+				cabinVehicleId = 0;
+				capsuleCount = 0;
+			}
 			door = approach(door, doorTarget, EmtraClientConfig.TRAIN_MUFFLE_DOOR_FADE_MS / 1000F, seconds);
 			muffle = riding * (1 - door * EmtraClientConfig.TRAIN_MUFFLE_DOOR_OPEN / 100F);
-			final boolean vehicleSounds = !MtrSounds.isEmpty() && (occlusionActive() || muffle > EPSILON);
+			final boolean vehicleSounds = !MtrSounds.isEmpty() && (occlusionActive() || EmtraClientConfig.SOUND_DEBUG || muffle > EPSILON);
 			if (muffle <= EPSILON && !vehicleSounds && !anyAttached) {
-				if (factorsSet) {
-					// Nothing is filtered any more: no source may keep a stale factor for SPP's reverb send.
-					Arrays.fill(FACTOR_GAIN, 1);
-					Arrays.fill(FACTOR_GAIN_HF, 1);
-					factorsSet = false;
-				}
 				return;
 			}
-			factorsSet = true;
 			if (!checkContext()) {
 				return;
 			}
 			try {
 				apply(vehicleSounds, seconds);
+				SoundDebug.finishPass();
 			} finally {
 				AL10.alGetError();
 			}
@@ -136,8 +113,17 @@ public final class SoundFilters {
 		}
 	}
 
-	public static boolean occlusionActive() {
-		return EmtraClientConfig.MTR_SOUND_OCCLUSION && !SoundPhysicsCompat.remasteredLoaded() && (EmtraClientConfig.SPP_BYPASS_VEHICLE_SOUNDS || !SoundPhysicsCompat.perfectedLoaded());
+	private static boolean remasteredLoaded() {
+		try {
+			Class.forName("com.sonicether.soundphysics.SoundPhysics", false, SoundFilters.class.getClassLoader());
+			return true;
+		} catch (ClassNotFoundException | LinkageError e) {
+			return false;
+		}
+	}
+
+	static boolean occlusionActive() {
+		return EmtraClientConfig.MTR_SOUND_OCCLUSION && !REMASTERED_LOADED;
 	}
 
 	/**
@@ -164,76 +150,13 @@ public final class SoundFilters {
 		return OCCLUSION_RESULT;
 	}
 
-	/** Called right after Sound Physics Perfected muffled a source (same formula as its applyMuffleToSource). */
-	public static void onExternalMuffle(int source, float muffleStrength) {
-		if (source <= 0 || source > MAX_SOURCE_ID) {
-			return;
-		}
-		final float strength = Math.max(0, Math.min(1, muffleStrength));
-		RECORDED[source] = true;
-		RECORDED_GAIN[source] = 1 + (0.2F - 1) * strength;
-		RECORDED_GAIN_HF[source] = 1 + (0.1F - 1) * strength;
-		ATTACHED[source] = false;
-		// SPP does this every tick for each of its sounds. Its filter replaced ours: put ours (both combined) back right
-		// away, otherwise the two alternate many times a second and the sound trembles.
-		if (broken || !efx || ALC10.alcGetCurrentContext() != context) {
-			return;
-		}
-		final float factorGain = FACTOR_GAIN[source], factorGainHF = FACTOR_GAIN_HF[source];
-		if (factorGain >= 0.999F && factorGainHF >= 0.999F) {
-			return;
-		}
-		try {
-			setFilter(source, RECORDED_GAIN[source] * factorGain, RECORDED_GAIN_HF[source] * factorGainHF);
-			ATTACHED[source] = true;
-		} catch (Throwable ignored) {
-		} finally {
-			AL10.alGetError();
-		}
+	/** Use the vehicle ID when MTR provides it. Script sounds can fall back to their position. */
+	static boolean belongsToRidingVehicle(Long owner, double x, double y, double z) {
+		return owner == null ? capsuleCount > 0 && insideVehicle(x, y, z) : owner == cabinVehicleId;
 	}
 
-	/** Whether a point is inside the train the player rides (only known while riding). */
-	static boolean insideRidingVehicle(double x, double y, double z) {
-		return capsuleCount > 0 && insideVehicle(x, y, z);
-	}
-
-	/**
-	 * Called right after Sound Physics Perfected set a source's reverb send (every tick, for every playing source).
-	 * The send path does not go through the direct filter, so without this an occluded train was still heard through
-	 * the listener's reverb at full strength, as if it were on the surface. The send gets EMTRA's factor too.
-	 */
-	public static void onSppReverbSend(int source, int auxSlot, int sppSendFilter) {
-		if (broken || source <= 0 || source > MAX_SOURCE_ID || !efx || sppSendFilter == 0) {
-			return;
-		}
-		final float factorGain = FACTOR_GAIN[source], factorGainHF = FACTOR_GAIN_HF[source];
-		if (factorGain >= 0.999F && factorGainHF >= 0.999F) {
-			return;
-		}
-		try {
-			final float gain = EXTEfx.alGetFilterf(sppSendFilter, EXTEfx.AL_LOWPASS_GAIN) * factorGain;
-			final float gainHF = EXTEfx.alGetFilterf(sppSendFilter, EXTEfx.AL_LOWPASS_GAINHF) * factorGainHF;
-			int filter = SEND_FILTER[source];
-			if (filter == 0) {
-				filter = EXTEfx.alGenFilters();
-				EXTEfx.alFilteri(filter, EXTEfx.AL_FILTER_TYPE, EXTEfx.AL_FILTER_LOWPASS);
-				SEND_FILTER[source] = filter;
-			}
-			EXTEfx.alFilterf(filter, EXTEfx.AL_LOWPASS_GAIN, Math.max(0, Math.min(1, gain)));
-			EXTEfx.alFilterf(filter, EXTEfx.AL_LOWPASS_GAINHF, Math.max(0, Math.min(1, gainHF)));
-			AL11.alSource3i(source, EXTEfx.AL_AUXILIARY_SEND_FILTER, auxSlot, 0, filter);
-		} catch (Throwable ignored) {
-		} finally {
-			AL10.alGetError();
-		}
-	}
-
-	static float occlusionGain(int blocks) {
-		return (float) Math.pow(OCCLUSION_GAIN_PER_BLOCK, blocks);
-	}
-
-	static float occlusionGainHF(int blocks) {
-		return (float) Math.pow(OCCLUSION_HF_PER_BLOCK, blocks);
+	static float cabinMuffleAmount(float fullAmount, boolean relative, boolean mild) {
+		return relative ? 0 : fullAmount * (mild ? OWN_SOUND_MUFFLE_SCALE : 1);
 	}
 
 	static float approach(float value, float target, float fadeSeconds, float seconds) {
@@ -247,8 +170,7 @@ public final class SoundFilters {
 
 	/** 1 while riding (and the muffle is enabled), else 0; also sets {@link #doorTarget}. */
 	private static float findMuffleTarget() {
-		doorTarget = 0;
-		capsuleCount = 0;
+		// Retain the last cabin during the alighting fade.
 		if (!EmtraClientConfig.TRAIN_MUFFLE) {
 			return 0;
 		}
@@ -270,6 +192,8 @@ public final class SoundFilters {
 		if (vehicle == null) {
 			return 0;
 		}
+		cabinVehicleId = ridingVehicleId;
+		capsuleCount = 0;
 		buildCapsules(vehicle);
 		final double doorValue = Math.max(0, Math.min(1, vehicle.persistentVehicleData.getDoorValue()));
 		// MTR's door value runs 0..1 over the whole door cycle, but every door animation type moves the doors while it
@@ -335,10 +259,6 @@ public final class SoundFilters {
 			context = currentContext;
 			Arrays.fill(OUR_FILTER, 0);
 			Arrays.fill(ATTACHED, false);
-			Arrays.fill(RECORDED, false);
-			Arrays.fill(SEND_FILTER, 0);
-			Arrays.fill(FACTOR_GAIN, 1);
-			Arrays.fill(FACTOR_GAIN_HF, 1);
 			anyAttached = false;
 			efx = ALC10.alcIsExtensionPresent(ALC10.alcGetContextsDevice(currentContext), "ALC_EXT_EFX");
 			if (!efx) {
@@ -356,10 +276,13 @@ public final class SoundFilters {
 		if (vehicleSounds && occlusionActive()) {
 			SoundPaths.beginUpdate(listenerX, listenerY, listenerZ);
 		}
-		final int mtrSounds = vehicleSounds ? MtrSounds.collect(MTR_SOUNDS, MTR_SOURCES, listenerX, listenerY, listenerZ, seconds) : 0;
+		final int mtrSounds = vehicleSounds ? MtrSounds.collect(MTR_SOUNDS, MTR_SOURCES, listenerX, listenerY, listenerZ, seconds, muffle > EPSILON) : 0;
+		if (mtrSounds == 0 && muffle <= EPSILON && !anyAttached) {
+			return;
+		}
 		final float[] mtr = MTR_SOUNDS[0];
 		final int[] mtrSources = MTR_SOURCES[0];
-		// Vehicle sounds whose OpenAL source is known (Sound Physics Perfected copies)
+		// Vehicle sounds whose OpenAL source is known.
 		Arrays.fill(VEHICLE_ENTRY, -1);
 		for (int i = 0; i < mtrSounds; i++) {
 			final int source = mtrSources[i];
@@ -372,9 +295,6 @@ public final class SoundFilters {
 		for (int source = 1; source <= MAX_SOURCE_ID; source++) {
 			if (!AL10.alIsSource(source)) {
 				ATTACHED[source] = false;
-				RECORDED[source] = false;
-				FACTOR_GAIN[source] = 1;
-				FACTOR_GAIN_HF[source] = 1;
 				continue;
 			}
 			final boolean relative = AL10.alGetSourcei(source, AL10.AL_SOURCE_RELATIVE) == AL10.AL_TRUE;
@@ -392,46 +312,40 @@ public final class SoundFilters {
 				}
 			}
 			float occlusionGain = 1, occlusionGainHF = 1;
-			boolean ownVehicleSound = false;
+			boolean mildCabinFilter = false;
 			if (entry >= 0) {
 				statMatched++;
 				final int j = entry * MtrSounds.STRIDE;
 				occlusionGain = mtr[j + 3];
 				occlusionGainHF = mtr[j + 4];
-				ownVehicleSound = mtr[j + 5] > 0;
+				mildCabinFilter = mtr[j + 5] > 0;
 				if (occlusionGain < 0.01F) {
 					statSilenced++;
 				}
 			}
 
-			// While riding, everything is muffled except the riding train's own sounds other than its motor and run loops
-			// (doors, noise, flange, compressor, brakes...) and music/UI.
-			float amount = muffle;
-			if (amount > EPSILON && (relative || ownVehicleSound && !EmtraClientConfig.TRAIN_MUFFLE_OWN_VEHICLE)) {
-				amount = 0;
-			}
+			final float amount = cabinMuffleAmount(muffle, relative, mildCabinFilter);
 
-			FACTOR_GAIN[source] = occlusionGain * (1 - amount * (1 - muffleVolume));
-			FACTOR_GAIN_HF[source] = occlusionGainHF * (1 - amount * (1 - muffleTreble));
-			final float baseGain = RECORDED[source] ? RECORDED_GAIN[source] : 1;
-			final float baseGainHF = RECORDED[source] ? RECORDED_GAIN_HF[source] : 1;
-			if (occlusionGain >= 0.999F && occlusionGainHF >= 0.999F && amount <= EPSILON) {
-				if (ATTACHED[source]) {
-					// Back to whatever the source had before (SPP's muffle, or nothing).
-					if (RECORDED[source]) {
-						setFilter(source, baseGain, baseGainHF);
-					} else {
-						AL10.alSourcei(source, EXTEfx.AL_DIRECT_FILTER, EXTEfx.AL_FILTER_NULL);
+			final boolean filterNeeded = occlusionGain < 0.999F || occlusionGainHF < 0.999F || amount > EPSILON;
+			final float gain = filterNeeded ? occlusionGain * (1 - amount * (1 - muffleVolume)) : 1;
+			final float gainHF = filterNeeded ? occlusionGainHF * (1 - amount * (1 - muffleTreble)) : 1;
+			// Serialize the fallback with SPR's first attachment and Minecraft's source deletion.
+			if (REMASTERED_LOADED) {
+				synchronized (RemasteredSoundFilters.class) {
+					if (!AL10.alIsSource(source)) {
+						ATTACHED[source] = false;
+						continue;
 					}
-					ATTACHED[source] = false;
+					if (RemasteredSoundFilters.update(source, gain, gainHF)) {
+						ATTACHED[source] = false;
+					} else {
+						applyDirectFilter(source, filterNeeded, gain, gainHF);
+					}
 				}
-				continue;
+			} else {
+				applyDirectFilter(source, filterNeeded, gain, gainHF);
 			}
-			// Attached every update: another mod may have replaced our filter without us knowing, and re-attaching the
-			// same values does not change the sound.
-			setFilter(source, baseGain * occlusionGain * (1 - amount * (1 - muffleVolume)), baseGainHF * occlusionGainHF * (1 - amount * (1 - muffleTreble)));
-			ATTACHED[source] = true;
-			stillAttached = true;
+			stillAttached |= filterNeeded;
 		}
 		anyAttached = stillAttached;
 		if (EmtraClientConfig.RENDER_STATS) {
@@ -442,8 +356,8 @@ public final class SoundFilters {
 			final long now = System.nanoTime();
 			if (now - statLast > 10_000_000_000L) {
 				statLast = now;
-				EmtraMod.LOGGER.info("Sound filters (10 s): updates={}, updatesWithFilters={}, vehicleSoundRows={}, vehicleSourcesMatched={}, silencedByBlocks={}, muffle={}, occlusion={}, spp={}",
-						statUpdates, statFiltered, mtrSounds, statMatched, statSilenced, String.format("%.2f", muffle), occlusionActive(), SoundPhysicsCompat.perfectedLoaded());
+				EmtraMod.LOGGER.info("Sound filters (10 s): updates={}, updatesWithFilters={}, vehicleSoundRows={}, vehicleSourcesMatched={}, silencedByBlocks={}, muffle={}, occlusion={}",
+						statUpdates, statFiltered, mtrSounds, statMatched, statSilenced, String.format("%.2f", muffle), occlusionActive());
 				statUpdates = 0;
 				statFiltered = 0;
 				statMatched = 0;
@@ -453,6 +367,15 @@ public final class SoundFilters {
 	}
 
 	private static long statLast, statUpdates, statFiltered, statMatched, statSilenced;
+
+	private static void applyDirectFilter(int source, boolean filterNeeded, float gain, float gainHF) {
+		if (filterNeeded) {
+			setFilter(source, gain, gainHF);
+		} else if (ATTACHED[source]) {
+			AL10.alSourcei(source, EXTEfx.AL_DIRECT_FILTER, EXTEfx.AL_FILTER_NULL);
+		}
+		ATTACHED[source] = filterNeeded;
+	}
 
 	private static void setFilter(int source, float gain, float gainHF) {
 		int filter = OUR_FILTER[source];

@@ -50,6 +50,7 @@ public class EmtraConfigScreen extends MTRScreenBase {
 		slider("options.emtra.train_muffle_door_open", 20, 5, "%", EmtraClientConfig.TRAIN_MUFFLE_DOOR_OPEN, value -> EmtraClientConfig.TRAIN_MUFFLE_DOOR_OPEN = value);
 		slider("options.emtra.train_muffle_fade", 25, 100, " ms", EmtraClientConfig.TRAIN_MUFFLE_FADE_MS, value -> EmtraClientConfig.TRAIN_MUFFLE_FADE_MS = value);
 		slider("options.emtra.train_muffle_door_fade", 20, 50, " ms", EmtraClientConfig.TRAIN_MUFFLE_DOOR_FADE_MS, value -> EmtraClientConfig.TRAIN_MUFFLE_DOOR_FADE_MS = value);
+		toggle("options.emtra.sound_debug", () -> EmtraClientConfig.SOUND_DEBUG, value -> EmtraClientConfig.SOUND_DEBUG = value);
 		buttonDone = new ButtonWidgetExtension(0, 0, 0, 20, TextHelper.translatable("gui.done"), button -> onClose2());
 	}
 

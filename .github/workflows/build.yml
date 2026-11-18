@@ -36,6 +36,37 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="$GITHUB_REF_NAME"
+          elif [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/main ]]; then
+            subject=$(git log -1 --format=%s)
+            if [[ "$subject" =~ ^Release\ (v[0-9]+\.[0-9]+\.[0-9]+)(:|$) ]]; then
+              tag="${BASH_REMATCH[1]}"
+            fi
+          fi
+          if [[ -z "${tag:-}" ]]; then
+            exit 0
+          fi
+
+          version=$(sed -n 's/^mod_version[[:space:]]*=[[:space:]]*//p' gradle.properties)
+          if [[ "$tag" != "v$version" ]]; then
+            echo "::error::Release tag $tag does not match mod_version $version"
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" != "refs/tags/$tag" ]]; then
+            refs=$(git ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}")
+            existing_commit=$(awk 'END {print $1}' <<< "$refs")
+            if [[ -n "$existing_commit" && "$existing_commit" != "$GITHUB_SHA" ]]; then
+              echo "::error::Release tag $tag already points to $existing_commit"
+              exit 1
+            fi
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -80,21 +111,24 @@ jobs:
           path: build/release/*.jar
 
       - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.release.outputs.tag != ''
         uses: softprops/action-gh-release@v2
         with:
           files: build/release/*.jar
-          name: EMTRA ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: EMTRA ${{ steps.release.outputs.tag }}
           draft: false
           prerelease: false
           generate_release_notes: true
 
       - name: Verify and remove any sources jars from release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.release.outputs.tag != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
         run: |
-          TAG="${{ github.ref_name }}"
           echo "Verifying release $TAG assets..."
           ASSETS=$(gh release view "$TAG" --repo ${{ github.repository }} --json assets -q '.assets[] | select(.name | endswith("-sources.jar")) | .name' 2>/dev/null || true)
           for asset in $ASSETS; do

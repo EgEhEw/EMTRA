@@ -11,7 +11,6 @@ final class EmtraForgeClient {
 	}
 
 	static void init() {
-		com.egehew.emtra.sound.SoundSources.setProvider(new ForgeSoundSources());
 		ModLoadingContext.get().registerExtensionPoint(ConfigScreenHandler.ConfigScreenFactory.class,
 				() -> new ConfigScreenHandler.ConfigScreenFactory((minecraft, parent) -> new EmtraConfigScreen(new org.mtr.mapping.holder.Screen(parent))));
 	}
