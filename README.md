@@ -41,6 +41,8 @@ Rendering
 
 Lift models are always reused: MTR builds a new lift model for every lift on every frame (also when FangSu replaces the model); EMTRA keeps one model per lift size instead. Start the game with `-Demtra.liftModelCache=false` to turn this off.
 
+PIDS text uses Minecraft's world rendering buffers and keeps MTR's arrival refresh timing. Railway signs and station names can draw past the block entity render range when their chunks are loaded. Distant railway signs use separate depths for their background and lettering to prevent flickering.
+
 Sound
 
 - `trainMuffle` (default `false`, experimental): while riding a train, exterior sounds and the train's own motor, run, `airhigh` and `airzero` sounds get the full cabin filter. The riding train's other sounds get 15% of that effect. The filter fades in and out when boarding and alighting and follows the doors as they open and close.

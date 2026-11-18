@@ -3,6 +3,7 @@ import com.egehew.emtra.compat.MagicMtrCompat;
 import com.egehew.emtra.data.ArrivalRouting;
 import com.egehew.emtra.data.RoutingPathData;
 import com.egehew.emtra.duck.IVehicle;
+import com.egehew.emtra.render.PidsTextPatch;
 import org.mtr.core.data.*;
 import org.mtr.core.serializer.JsonReader;
 import org.mtr.core.serializer.JsonWriter;
@@ -33,6 +34,7 @@ public final class RegressionChecks {
         testArrivals();
         testRouting();
         testMixinTargets();
+        testPidsTextBatch();
         if (args.length > 0) testMagicBytecode(Path.of(args[0]));
         System.out.println("PASS: " + checks + " regression checks");
     }
@@ -145,6 +147,33 @@ public final class RegressionChecks {
         EmtraMixinPlugin plugin = new EmtraMixinPlugin();
         check(plugin.shouldApplyMixin("", "com.egehew.emtra.mixin.DashboardScreenMixin"), "EMTRA menu remains without Magic");
         check(!plugin.shouldApplyMixin("", "com.egehew.emtra.mixin.ArrivalsRequestCompatMixin"), "No Magic request patch without Magic");
+    }
+
+    private static void testPidsTextBatch() throws Exception {
+        final String descriptor = "(Ljava/lang/String;IIIZI)V";
+        final ClassNode holder = new ClassNode();
+        try (var stream = RegressionChecks.class.getResourceAsStream("/org/mtr/mapping/mapper/GraphicsHolder.class")) {
+            new ClassReader(Objects.requireNonNull(stream)).accept(holder, 0);
+        }
+        final MethodNode original = holder.methods.stream()
+                .filter(method -> method.name.equals("drawText") && method.desc.equals(descriptor)).findFirst().orElseThrow();
+        final int originalSize = original.instructions.size();
+        final MethodNode bridge = new MethodNode(Opcodes.ACC_PUBLIC, "emtra$drawPidsText", descriptor, null, null);
+        holder.methods.add(bridge);
+        check(PidsTextPatch.apply(holder), "Recognize MTR's String drawText method");
+        new Analyzer<>(new BasicVerifier()).analyze(holder.name, bridge);
+        check(original.instructions.size() == originalSize, "Keep MTR's original text entry point intact");
+        int bufferReads = 0, fontCalls = 0, fallbacks = 0, otherVoidCalls = 0;
+        for (AbstractInsnNode insn : bridge.instructions) {
+            if (insn instanceof FieldInsnNode field && field.name.equals("vertexConsumerProvider")) bufferReads++;
+            if (insn instanceof MethodInsnNode call) {
+                if (call.desc.startsWith("(Ljava/lang/String;FFIZLorg/joml/Matrix4f;")) fontCalls++;
+                if (call.owner.equals(holder.name) && call.name.equals("drawText")) fallbacks++;
+                else if (call.desc.endsWith(")V")) otherVoidCalls++;
+            }
+        }
+        check(bufferReads == 2 && fontCalls == 1, "Use the world buffer and MTR's original font call");
+        check(fallbacks == 1 && otherVoidCalls == 0, "World text leaves flushing to the engine and GUI text keeps its original path");
     }
 
     private static ClassNode readClass(Class<?> type) throws Exception {

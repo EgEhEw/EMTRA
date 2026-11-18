@@ -38,6 +38,13 @@ public final class EmtraRenderMixinPlugin implements IMixinConfigPlugin {
 
 	@Override
 	public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
+		if (mixinClassName.endsWith(".GraphicsHolderMixin")) {
+			try {
+				PidsTextPatch.apply(targetClass);
+			} catch (RuntimeException e) {
+				System.err.println("[EMTRA] Could not batch PIDS text: " + e);
+			}
+		}
 		// Called after all mods' mixins were applied to the class (see LiftModelCachePatch).
 		if (mixinClassName.endsWith(".RenderLiftsModelCacheMixin")) {
 			try {

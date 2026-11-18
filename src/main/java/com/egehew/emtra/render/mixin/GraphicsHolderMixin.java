@@ -2,6 +2,7 @@ package com.egehew.emtra.render.mixin;
 
 import com.egehew.emtra.render.CatenaryCache;
 import com.egehew.emtra.render.RailRenderCache;
+import com.egehew.emtra.render.PidsTextGraphics;
 import org.mtr.mapping.holder.Direction;
 import org.mtr.mapping.mapper.GraphicsHolder;
 import org.spongepowered.asm.mixin.Mixin;
@@ -11,7 +12,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /** Direct (non-optimized) drawing while a rail is being captured makes that rail uncacheable. */
 @Mixin(value = GraphicsHolder.class, remap = false)
-public abstract class GraphicsHolderMixin {
+public abstract class GraphicsHolderMixin implements PidsTextGraphics {
+
+	/** The render mixin plugin replaces this bridge when it recognises MTR's font call. */
+	@Override
+	public void emtra$drawPidsText(String text, int x, int y, int color, boolean shadow, int light) {
+		((GraphicsHolder) (Object) this).drawText(text, x, y, color, shadow, light);
+	}
 
 	@Inject(method = "createVertexConsumer", at = @At("HEAD"), require = 0, remap = false)
 	private void emtra$createVertexConsumer(CallbackInfo ci) {

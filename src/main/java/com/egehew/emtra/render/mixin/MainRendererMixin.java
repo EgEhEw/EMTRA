@@ -2,6 +2,7 @@ package com.egehew.emtra.render.mixin;
 
 import com.egehew.emtra.render.CatenaryCache;
 import com.egehew.emtra.render.RailRenderCache;
+import com.egehew.emtra.render.StationSignRendering;
 import org.mtr.mapping.holder.Identifier;
 import org.mtr.mapping.holder.Vector3d;
 import org.mtr.mapping.mapper.GraphicsHolder;
@@ -26,6 +27,11 @@ public abstract class MainRendererMixin {
 		com.egehew.emtra.sound.SoundFilters.update();
 	}
 
+	@Inject(method = "render(Lorg/mtr/mapping/mapper/GraphicsHolder;Lorg/mtr/mapping/holder/Vector3d;)V", at = @At(value = "INVOKE", target = "Lorg/mtr/mod/render/RenderRails;render()V"), remap = false)
+	private static void emtra$enqueueStationSigns(GraphicsHolder graphics, Vector3d offset, CallbackInfo ci) {
+		StationSignRendering.enqueue(graphics, offset);
+	}
+
 	@Inject(method = "scheduleRender(Lorg/mtr/mod/render/QueuedRenderLayer;Ljava/util/function/BiConsumer;)V", at = @At("HEAD"), cancellable = true, require = 0, remap = false)
 	private static void emtra$wrapModel(QueuedRenderLayer layer, BiConsumer<GraphicsHolder, Vector3d> consumer, CallbackInfo ci) {
 		final BiConsumer<GraphicsHolder, Vector3d> wrapped = RailRenderCache.wrap(layer, consumer, false);
@@ -41,12 +47,18 @@ public abstract class MainRendererMixin {
 	}
 
 	@Inject(method = "scheduleRender(Lorg/mtr/mapping/holder/Identifier;ZLorg/mtr/mod/render/QueuedRenderLayer;Ljava/util/function/BiConsumer;)V", at = @At("HEAD"), cancellable = true, require = 0, remap = false)
-	private static void emtra$wrapTextured(Identifier texture, boolean translucent, QueuedRenderLayer layer, BiConsumer<GraphicsHolder, Vector3d> consumer, CallbackInfo ci) {
-		final BiConsumer<GraphicsHolder, Vector3d> catenary = CatenaryCache.wrap(texture, translucent, layer, consumer);
+	private static void emtra$wrapTextured(Identifier texture, boolean priority, QueuedRenderLayer layer, BiConsumer<GraphicsHolder, Vector3d> consumer, CallbackInfo ci) {
+		final BiConsumer<GraphicsHolder, Vector3d> signLayer = StationSignRendering.separateSignLayers(priority, consumer);
+		if (signLayer != consumer) {
+			MainRenderer.scheduleRender(texture, priority, layer, signLayer);
+			ci.cancel();
+			return;
+		}
+		final BiConsumer<GraphicsHolder, Vector3d> catenary = CatenaryCache.wrap(texture, priority, layer, consumer);
 		if (catenary != null) {
 			CatenaryCache.setWrapping(true);
 			try {
-				MainRenderer.scheduleRender(texture, translucent, layer, catenary);
+				MainRenderer.scheduleRender(texture, priority, layer, catenary);
 			} finally {
 				CatenaryCache.setWrapping(false);
 			}
@@ -57,7 +69,7 @@ public abstract class MainRendererMixin {
 		if (wrapped != null) {
 			RailRenderCache.setWrapping(true);
 			try {
-				MainRenderer.scheduleRender(texture, translucent, layer, wrapped);
+				MainRenderer.scheduleRender(texture, priority, layer, wrapped);
 			} finally {
 				RailRenderCache.setWrapping(false);
 			}
