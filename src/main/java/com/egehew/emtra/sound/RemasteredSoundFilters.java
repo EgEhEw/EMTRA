@@ -1,5 +1,6 @@
 package com.egehew.emtra.sound;
 
+import com.egehew.emtra.render.EmtraClientConfig;
 import org.lwjgl.openal.AL10;
 import org.lwjgl.openal.AL11;
 import org.lwjgl.openal.ALC;
@@ -18,6 +19,8 @@ import java.util.Map;
 public final class RemasteredSoundFilters {
 
 	private static final Map<Integer, Source> SOURCES = new HashMap<>();
+	/** Time constant of the glide toward SPR's latest values; SPR updates every 3 ticks (150 ms) by default. */
+	private static final float SMOOTH_SECONDS = 0.12F;
 	private static long context;
 	private static int scratchFilter;
 
@@ -56,7 +59,15 @@ public final class RemasteredSoundFilters {
 			AL11.alSourcei(source, parameter, originalFilter);
 			return;
 		}
-		state.direct = new Filter(gain, gainHF);
+		final Filter target = new Filter(gain, gainHF);
+		if (state.direct != null && EmtraClientConfig.SMOOTH_SPR_UPDATES) {
+			// A moving sound's re-evaluation: glide there in smooth() instead of jumping (an audible click).
+			state.directTarget = target;
+			state.smoothing = true;
+			return;
+		}
+		state.direct = target;
+		state.directTarget = null;
 		AL11.alSourcei(source, parameter, state.neutral() ? originalFilter : combined(state, state.direct));
 	}
 
@@ -67,8 +78,72 @@ public final class RemasteredSoundFilters {
 			return;
 		}
 		final Filter filter = new Filter(gain, gainHF);
+		final Send previous = state.sends[index];
+		if (previous != null && slot != 0 && previous.slot() == slot && EmtraClientConfig.SMOOTH_SPR_UPDATES) {
+			state.sendTargets[index] = filter;
+			state.smoothing = true;
+			return;
+		}
+		state.sendTargets[index] = null;
 		state.sends[index] = slot == 0 ? null : new Send(slot, filter);
 		AL11.alSource3i(source, parameter, slot, index, state.neutral() || slot == 0 ? originalFilter : combined(state, filter));
+	}
+
+	/**
+	 * SPR re-evaluates moving sounds every few ticks and sets the new filter coefficients at once. OpenAL does not
+	 * interpolate a changed low-pass, so each step is an audible click where the result varies (walls, tunnels).
+	 * Glides every source toward SPR's latest values; called every frame.
+	 */
+	public static synchronized void smooth(float seconds) {
+		if (context == 0 || currentContext() != context || seconds <= 0) {
+			return;
+		}
+		final float step = 1 - (float) Math.exp(-seconds / SMOOTH_SECONDS);
+		for (final Map.Entry<Integer, Source> entry : SOURCES.entrySet()) {
+			final Source state = entry.getValue();
+			if (!state.smoothing) {
+				continue;
+			}
+			final int source = entry.getKey();
+			if (!AL10.alIsSource(source)) {
+				state.smoothing = false;
+				continue;
+			}
+			boolean moving = false;
+			if (state.directTarget != null && state.direct != null) {
+				state.direct = approach(state.direct, state.directTarget, step);
+				if (state.direct == state.directTarget) {
+					state.directTarget = null;
+				} else {
+					moving = true;
+				}
+				AL11.alSourcei(source, EXTEfx.AL_DIRECT_FILTER, combined(state, state.direct));
+			}
+			for (int i = 0; i < state.sends.length; i++) {
+				final Filter target = state.sendTargets[i];
+				final Send send = state.sends[i];
+				if (target == null || send == null) {
+					state.sendTargets[i] = null;
+					continue;
+				}
+				final Filter next = approach(send.filter(), target, step);
+				state.sends[i] = new Send(send.slot(), next);
+				if (next == target) {
+					state.sendTargets[i] = null;
+				} else {
+					moving = true;
+				}
+				AL11.alSource3i(source, EXTEfx.AL_AUXILIARY_SEND_FILTER, send.slot(), i, combined(state, next));
+			}
+			state.smoothing = moving;
+		}
+	}
+
+	private static Filter approach(Filter current, Filter target, float step) {
+		final float gain = current.gain() + (target.gain() - current.gain()) * step;
+		final float gainHF = current.gainHF() + (target.gainHF() - current.gainHF()) * step;
+		return Math.abs(target.gain() - gain) < 0.002F && Math.abs(target.gainHF() - gainHF) < 0.002F
+				? target : new Filter(gain, gainHF);
 	}
 
 	/** Updates a registered source. Returns true once SPR owns its direct filter. */
@@ -131,7 +206,10 @@ public final class RemasteredSoundFilters {
 
 	private static final class Source {
 		private Filter direct;
+		private Filter directTarget;
 		private final Send[] sends = new Send[4];
+		private final Filter[] sendTargets = new Filter[4];
+		private boolean smoothing;
 		private float cabinGain = 1;
 		private float cabinHF = 1;
 

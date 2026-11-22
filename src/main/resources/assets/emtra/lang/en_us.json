@@ -17,6 +17,11 @@
   "options.emtra.render_instancing": "Instanced MTR model drawing",
   "options.emtra.render_rail_cache": "Rail render cache",
   "options.emtra.render_catenary_cache": "MSD catenary cache",
+  "options.emtra.advanced_sway": "Advanced SWAY",
+  "options.emtra.sway_horizontal": "Horizontal sway",
+  "options.emtra.sway_vertical": "Vertical sway",
+  "options.emtra.sway_brake_pitch": "Brake pitch",
+  "options.emtra.mtr_sway_locked": "Vehicle sway (Advanced SWAY)",
   "options.emtra.render_stats": "Log render statistics",
   "options.emtra.train_muffle_door_fade": "Door open/close fade"
 }

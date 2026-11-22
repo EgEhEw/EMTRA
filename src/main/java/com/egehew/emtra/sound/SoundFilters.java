@@ -79,6 +79,9 @@ public final class SoundFilters {
 			return;
 		}
 		final long now = System.nanoTime();
+		if (REMASTERED_LOADED) {
+			smoothRemastered(now);
+		}
 		if (now - lastNanos < UPDATE_INTERVAL_NANOS) {
 			return;
 		}
@@ -110,6 +113,26 @@ public final class SoundFilters {
 		} catch (Throwable t) {
 			broken = true;
 			EmtraMod.LOGGER.error("EMTRA sound filters disabled after an error", t);
+		}
+	}
+
+	private static long lastSmoothNanos;
+	private static boolean smoothBroken;
+
+	/** Every frame: glide SPR's moving-sound filters (see RemasteredSoundFilters.smooth). */
+	private static void smoothRemastered(long now) {
+		final float seconds = lastSmoothNanos == 0 ? 0 : Math.min(0.25F, (now - lastSmoothNanos) / 1E9F);
+		lastSmoothNanos = now;
+		if (smoothBroken) {
+			return;
+		}
+		try {
+			RemasteredSoundFilters.smooth(seconds);
+			AL10.alGetError();
+		} catch (Throwable t) {
+			// SPR keeps working unsmoothed.
+			smoothBroken = true;
+			EmtraMod.LOGGER.error("EMTRA: Sound Physics Remastered smoothing disabled after an error", t);
 		}
 	}
 

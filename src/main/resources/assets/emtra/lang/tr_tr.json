@@ -17,6 +17,11 @@
   "options.emtra.render_instancing": "MTR modellerini instancing ile çiz",
   "options.emtra.render_rail_cache": "Ray çizim önbelleği",
   "options.emtra.render_catenary_cache": "MSD katener önbelleği",
+  "options.emtra.advanced_sway": "Advanced SWAY",
+  "options.emtra.sway_horizontal": "Yatay salınım",
+  "options.emtra.sway_vertical": "Dikey salınım",
+  "options.emtra.sway_brake_pitch": "Fren eğimi",
+  "options.emtra.mtr_sway_locked": "Araç salınımı (Advanced SWAY)",
   "options.emtra.render_stats": "Çizim istatistiklerini logla",
   "options.emtra.train_muffle_door_fade": "Kapı açılma/kapanma geçiş süresi"
 }

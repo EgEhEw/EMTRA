@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.IntConsumer;
 
 /**
  * EMTRA client options. Opened from the mod list (Forge "Config" button, Mod Menu on Fabric).
@@ -42,6 +43,10 @@ public class EmtraConfigScreen extends MTRScreenBase {
 		toggle("options.emtra.render_instancing", () -> EmtraClientConfig.RENDER_INSTANCING, value -> EmtraClientConfig.RENDER_INSTANCING = value);
 		toggle("options.emtra.render_rail_cache", () -> EmtraClientConfig.RENDER_RAIL_CACHE, value -> EmtraClientConfig.RENDER_RAIL_CACHE = value);
 		toggle("options.emtra.render_catenary_cache", () -> EmtraClientConfig.RENDER_CATENARY_CACHE, value -> EmtraClientConfig.RENDER_CATENARY_CACHE = value);
+		toggle("options.emtra.advanced_sway", () -> EmtraClientConfig.ADVANCED_SWAY, value -> EmtraClientConfig.ADVANCED_SWAY = value);
+		swaySlider("options.emtra.sway_horizontal", EmtraClientConfig.SWAY_HORIZONTAL, value -> EmtraClientConfig.SWAY_HORIZONTAL = value);
+		swaySlider("options.emtra.sway_vertical", EmtraClientConfig.SWAY_VERTICAL, value -> EmtraClientConfig.SWAY_VERTICAL = value);
+		swaySlider("options.emtra.sway_brake_pitch", EmtraClientConfig.SWAY_BRAKE_PITCH, value -> EmtraClientConfig.SWAY_BRAKE_PITCH = value);
 		toggle("options.emtra.render_stats", () -> EmtraClientConfig.RENDER_STATS, value -> EmtraClientConfig.RENDER_STATS = value);
 		section("options.emtra.section_sound");
 		toggle("options.emtra.train_muffle", () -> EmtraClientConfig.TRAIN_MUFFLE, value -> EmtraClientConfig.TRAIN_MUFFLE = value);
@@ -154,9 +159,27 @@ public class EmtraConfigScreen extends MTRScreenBase {
 		rows.add(holder[0]);
 	}
 
-	private void slider(String key, int steps, int stepSize, String unit, int currentValue, java.util.function.IntConsumer setter) {
+	private void slider(String key, int steps, int stepSize, String unit, int currentValue, IntConsumer setter) {
 		final WidgetShorterSlider slider = new WidgetShorterSlider(0, 0, steps, value -> value * stepSize + unit, value -> setter.accept(value * stepSize));
 		rows.add(new Row(key, null, slider, Math.round((float) currentValue / stepSize)));
+	}
+
+	private void swaySlider(String key, int currentValue, IntConsumer setter) {
+		rows.add(new Row(key, null, new SwaySlider(setter), currentValue));
+	}
+
+	private static final class SwaySlider extends WidgetShorterSlider {
+		private final IntConsumer setter;
+
+		private SwaySlider(IntConsumer setter) {
+			super(0, 0, EmtraClientConfig.SWAY_MAX_PERCENT, value -> value + "%", null);
+			this.setter = setter;
+		}
+
+		@Override
+		protected void applyValue2() {
+			setter.accept(getIntValue());
+		}
 	}
 
 	private static Text text(MutableText mutableText) {

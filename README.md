@@ -27,6 +27,10 @@ Always active on the client:
 - MTR vehicle sounds: looping BVE sounds (motor, run, flange, noise...) change volume and pitch smoothly, so a motor output that flickers from frame to frame no longer stops and restarts loops (clicks). Loop volume is capped at 1, which only limits the audible range to the one the pack's `sounds.json` gives (BVE packs with `MotorVolumeMultiply = 5` were heard 640 blocks away). One-shot sounds play once per event instead of once per scheduled sound.
 - Train sounds follow the air: with a clear line to the car body (rail level up to 2 blocks above, so a train beside a raised platform is heard) they are unchanged; otherwise the sound has to travel through tunnels, stations and stairwells. A train around a tunnel bend or behind a platform wall is heard from the direction of the opening it comes through, as far away as the path is long, quieter and duller the longer the detour; a train under solid ground is not heard at all. Thin walls (1-2 blocks) still let some sound through.
 - Cars that are not drawn (behind a bend or a wall) keep updating their sounds within hearing range, instead of freezing at their last volume and position.
+- Train loops play from the car's exact position, 1.5 blocks above the rail, instead of a block corner at rail level that jumped a block at a time. At a platform edge, sound physics no longer sees the source flip in and out of the platform blocks.
+- With Sound Physics Remastered, the direct and reverb filters of moving sounds glide to each re-evaluated value over about 0.12 s instead of stepping, which clicked where the result varies (walls, tunnels, platforms).
+- Vehicles advance by the exact frame time. MTR rounds each frame down to whole milliseconds and catches up with a one-tick jump once the lost time reaches a tick, which made trains visibly stutter at high frame rates.
+- Small rotations near a half turn are drawn exactly. Minecraft's rotation math snaps them to steps there, so the suspension pitch of a car on level track jumped between 0° and 0.04°.
 
 ## Client options
 
@@ -37,7 +41,10 @@ Rendering
 - `renderInstancing` (default `true`): draws repeated MTR model parts that share a mesh, such as 3D rail segments, with one GPU-instanced draw call instead of one call per part. Translucent parts, GL4ES and setups without MTR's custom shader keep MTR's own path; any error disables the feature for the session.
 - `renderRailCache` (default `true`): records the rail model placements MTR computes for each 3D rail and reuses them on later frames instead of recomputing rail curves every frame. Visibility is decided per rail where possible (only partly visible rails check their segments one by one), and only the segments in a section whose light changed re-read it, as soon as it changes. Rails are re-recorded every few seconds; flat textured rails are not cached.
 - `renderCatenaryCache` (default `true`): for MSD (MTR Station Decoration) rigid catenary, captures the quads MSD draws once and keeps them as MTR optimized models on the GPU instead of rebuilding them vertex by vertex every frame. Light follows changes immediately and catenaries are re-captured every few seconds; nothing happens when MSD is not installed.
+- `subdivideModels` (default `true`): splits MTR model faces along a one-block grid when a model is built, without changing how it looks. Shader packs bend the shadow map around the player per vertex, so a roof drawn as one 14-block face bent in the shadow map and shadowed itself up close. The split takes milliseconds per model and roughly triples the triangle count. Changes apply after a resource reload (F3+T).
 - `renderStats` (default `false`): logs model, draw call, rail cache, catenary cache, lift model cache and sound filter counts every 10 seconds.
+- Advanced SWAY (`advancedSway`, off on new installations) replaces MTR's vehicle oscillation and locks its sway slider until Advanced SWAY is turned off. Horizontal and vertical sway follow speed. Coaches sharing a Jacobs bogie move together at the joint and can sway independently at their outer ends. Trains also pitch toward the direction of travel under braking and settle after a full stop.
+- `advancedSwayHorizontal`, `advancedSwayVertical`, and `advancedSwayBrakePitch` control each effect from 0% to 200%. At 100%, brake pitch is capped at 0.05°. Upgrading from `vehicleSway` and `trainStopSettle` preserves which effects were enabled.
 
 Lift models are always reused: MTR builds a new lift model for every lift on every frame (also when FangSu replaces the model); EMTRA keeps one model per lift size instead. Start the game with `-Demtra.liftModelCache=false` to turn this off.
 
@@ -49,6 +56,32 @@ Sound
 - `trainMuffleVolume` (default `55`) and `trainMuffleTreble` (default `10`): volume and high frequencies left at full muffle, in percent.
 - `trainMuffleDoorOpen` (default `75`): how much of the muffle open doors remove, in percent.
 - `trainMuffleFadeMs` (default `700`) and `trainMuffleDoorFadeMs` (default `250`): fade times for boarding/alighting and for the doors.
+
+## Native articulated vehicle models
+
+EMTRA detects shared bogies from adjacent carriages' lengths, coupling padding and bogie positions. For trim that rotates with the shared bogie's heading and follows the body displacement at that joint, list the trim as a separate model in the native MTR bogie slot. Put `"emtraBogieAttachment": true` in that model's properties JSON. For the trim to follow both carriages vertically, `emtraBogieAttachmentHalfLength` and `emtraBogieAttachmentHeight` in the same JSON describe the contact planes in blocks relative to the bogie anchor. They default to 0.5 and 1. Wheel models use the ordinary bogie slot with their own model properties. A bogie attachment at an unshared pivot renders at its original MTR pose.
+
+## Optional JCM vehicle suspension API
+
+Vehicle scripts on MTR 4.0.5 and JCM 2.3 can submit a suspension pose for their assigned carriages. EMTRA registers `com.egehew.emtra.api.VehicleSuspension` with JCM's class allowlist.
+
+```js
+var suspension = Packages.com.egehew.emtra.api.VehicleSuspension;
+
+function render(ctx, state, vehicle) {
+    var cars = ctx.getMyCars();
+    var bodies = new Array(cars.length * 3).fill(0);
+    var displacement = vehicle.getSpeedKmh() > 0 ? Math.sin(Date.now() / 200) * 0.004 : 0;
+    for (var i = 0; i < cars.length; i++) {
+        bodies[i * 3 + 1] = displacement;
+    }
+    suspension.submit(ctx, bodies, null, true);
+}
+```
+
+`submit(ctx, bodies, bogieAttachments, replaceStockOscillation)` takes world-space XYZ translations in blocks. Arrays follow `ctx.getMyCars()` order. Each carriage has one body triple and two attachment triples in bogie order. A null array supplies zero offsets. Body offsets also move MTR's doors, floors, riding position and JCM car render anchor. Attachment offsets move JCM bogie render anchors and keep wheel positions on the track. The final flag replaces the built-in sway for the submitted carriages while the sample is active. An articulated unit uses one sway source, and the native brake pitch can still run.
+
+Call `submit` during each render callback. Samples expire after 250 ms. Invalid contexts, array lengths or non-finite values return `false` and leave the previous sample in effect.
 
 ## Supported Versions
 

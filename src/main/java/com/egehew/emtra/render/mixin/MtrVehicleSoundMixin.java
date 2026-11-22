@@ -3,6 +3,9 @@ package com.egehew.emtra.render.mixin;
 import com.egehew.emtra.render.EmtraClientConfig;
 import com.egehew.emtra.sound.ApparentPosition;
 import com.egehew.emtra.sound.MtrSounds;
+import com.egehew.emtra.sound.ExactSoundPosition;
+import org.mtr.core.tool.Vector;
+import org.mtr.mapping.holder.BlockPos;
 import org.mtr.mapping.holder.SoundCategory;
 import org.mtr.mapping.holder.SoundEvent;
 import org.mtr.mapping.mapper.MovingSoundInstanceExtension;
@@ -53,35 +56,64 @@ public abstract class MtrVehicleSoundMixin extends MovingSoundInstanceExtension 
 		emtra$targetZ = z;
 	}
 
+	@Unique
+	private double emtra$exactX = Double.NaN, emtra$exactY, emtra$exactZ;
+
+	/** The car's exact position (see ExactSoundPosition), or MTR's block position before the first update. */
+	@Unique
+	private double emtra$baseX() {
+		return Double.isNaN(emtra$exactX) ? super.getX2() : emtra$exactX;
+	}
+
+	@Unique
+	private double emtra$baseY() {
+		return Double.isNaN(emtra$exactX) ? super.getY2() : emtra$exactY;
+	}
+
+	@Unique
+	private double emtra$baseZ() {
+		return Double.isNaN(emtra$exactX) ? super.getZ2() : emtra$exactZ;
+	}
+
+	@Inject(method = "setData", at = @At("HEAD"), require = 0, remap = false)
+	private void emtra$exactPosition(float volume, float pitch, BlockPos blockPos, CallbackInfo ci) {
+		final Vector exact = ExactSoundPosition.matching(blockPos.getX(), blockPos.getY(), blockPos.getZ());
+		if (exact != null) {
+			emtra$exactX = exact.x;
+			emtra$exactY = exact.y + ExactSoundPosition.BODY_HEIGHT;
+			emtra$exactZ = exact.z;
+		}
+	}
+
 	@Override
 	public double emtra$trueX() {
-		return super.getX2();
+		return emtra$baseX();
 	}
 
 	@Override
 	public double emtra$trueY() {
-		return super.getY2();
+		return emtra$baseY();
 	}
 
 	@Override
 	public double emtra$trueZ() {
-		return super.getZ2();
+		return emtra$baseZ();
 	}
 
 	/** Position Minecraft plays the sound at (getX() is final and calls this). */
 	@Override
 	public double getX2() {
-		return emtra$apparent ? emtra$apparentX : super.getX2();
+		return emtra$apparent ? emtra$apparentX : emtra$baseX();
 	}
 
 	@Override
 	public double getY2() {
-		return emtra$apparent ? emtra$apparentY : super.getY2();
+		return emtra$apparent ? emtra$apparentY : emtra$baseY();
 	}
 
 	@Override
 	public double getZ2() {
-		return emtra$apparent ? emtra$apparentZ : super.getZ2();
+		return emtra$apparent ? emtra$apparentZ : emtra$baseZ();
 	}
 
 	@Unique
@@ -142,15 +174,15 @@ public abstract class MtrVehicleSoundMixin extends MovingSoundInstanceExtension 
 	private void emtra$recordPosition(CallbackInfo ci) {
 		// Glide towards the apparent position, or back to the vehicle, instead of jumping.
 		final boolean hasTarget = !Double.isNaN(emtra$targetX);
-		final double goalX = hasTarget ? emtra$targetX : super.getX2();
-		final double goalY = hasTarget ? emtra$targetY : super.getY2();
-		final double goalZ = hasTarget ? emtra$targetZ : super.getZ2();
+		final double goalX = hasTarget ? emtra$targetX : emtra$baseX();
+		final double goalY = hasTarget ? emtra$targetY : emtra$baseY();
+		final double goalZ = hasTarget ? emtra$targetZ : emtra$baseZ();
 		if (!emtra$apparent) {
 			if (hasTarget) {
 				emtra$apparent = true;
-				emtra$apparentX = super.getX2();
-				emtra$apparentY = super.getY2();
-				emtra$apparentZ = super.getZ2();
+				emtra$apparentX = emtra$baseX();
+				emtra$apparentY = emtra$baseY();
+				emtra$apparentZ = emtra$baseZ();
 			}
 		}
 		if (emtra$apparent) {

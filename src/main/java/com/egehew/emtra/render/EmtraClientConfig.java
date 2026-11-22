@@ -20,13 +20,35 @@ public final class EmtraClientConfig {
 	public static volatile boolean RENDER_RAIL_CACHE;
 	/** Draw MSD rigid catenary from cached MTR models instead of rebuilding its quads every frame. */
 	public static volatile boolean RENDER_CATENARY_CACHE;
+	/** Replace stock vehicle oscillation with EMTRA's sway and brake pitch. */
+	public static volatile boolean ADVANCED_SWAY;
+	public static volatile int SWAY_HORIZONTAL;
+	public static volatile int SWAY_VERTICAL;
+	public static volatile int SWAY_BRAKE_PITCH;
+	public static final int SWAY_MAX_PERCENT = 200;
 	/** Log draw call statistics every 10 seconds. */
 	public static volatile boolean RENDER_STATS;
 	/** Write vehicle sound and OpenAL details to logs/emtra-sound.log once a second (for debugging sound problems). */
 	public static volatile boolean SOUND_DEBUG;
+	/** Write the ridden car's pose, rider offset and camera to logs/emtra-sway.log every frame (for debugging shaking). */
+	public static volatile boolean SWAY_DEBUG;
+	/**
+	 * Split MTR model triangles longer than a block when they are loaded, so shader packs' distorted shadow maps do not
+	 * bend long faces (a roof shadowing itself near the player). Takes effect on resource reload (F3+T).
+	 */
+	public static volatile boolean SUBDIVIDE_MODELS;
 
 	/** Smooth MTR vehicle loop volume and pitch, so flickering motor output does not stop and restart loops (clicks). */
 	public static final boolean SMOOTH_VEHICLE_SOUNDS = true;
+	/**
+	 * Advance MTR vehicles by the exact frame time. MTR truncates each frame to whole milliseconds (at 240 fps, 4.15 ms
+	 * becomes 4) and, once the lost time passes 50 ms, catches up in one frame: a visible one-tick jump of the train.
+	 */
+	public static final boolean EXACT_VEHICLE_TIMING = true;
+	/** Glide Sound Physics Remastered's moving-sound filter updates instead of stepping them (clicks). */
+	public static final boolean SMOOTH_SPR_UPDATES = true;
+	/** Play MTR vehicle loops at the car's exact position, 1.5 blocks above the rail, instead of a block corner at rail level. */
+	public static final boolean EXACT_VEHICLE_SOUND_POSITION = true;
 	/**
 	 * Cap MTR vehicle loop volume at 1: above 1 Minecraft only multiplies the audible range (BVE motors x5 = 640 blocks).
 	 */
@@ -49,6 +71,7 @@ public final class EmtraClientConfig {
 	private static final Path FILE = Paths.get("config", "emtra-client.properties");
 	private static final String COMMENT = "EMTRA client options (also editable in game: Mods > EMTRA > Config). "
 			+ "renderInstancing, renderRailCache, renderCatenaryCache: render optimizations for MTR models, rails and MSD catenary. "
+			+ "advancedSway: replaces MTR sway. advancedSwayHorizontal/Vertical/BrakePitch: strength in percent. "
 			+ "trainMuffle* (experimental): muffles sounds while riding a train (volume/treble/doorOpen in percent, fades in ms). "
 			+ "Train sound fixes are always on.";
 
@@ -57,8 +80,14 @@ public final class EmtraClientConfig {
 		defaults.setProperty("renderInstancing", "true");
 		defaults.setProperty("renderRailCache", "true");
 		defaults.setProperty("renderCatenaryCache", "true");
+		defaults.setProperty("advancedSway", "false");
+		defaults.setProperty("advancedSwayHorizontal", "100");
+		defaults.setProperty("advancedSwayVertical", "100");
+		defaults.setProperty("advancedSwayBrakePitch", "100");
 		defaults.setProperty("renderStats", "false");
 		defaults.setProperty("soundDebug", "false");
+		defaults.setProperty("swayDebug", "false");
+		defaults.setProperty("subdivideModels", "true");
 		defaults.setProperty("trainMuffle", "false");
 		defaults.setProperty("trainMuffleVolume", "55");
 		defaults.setProperty("trainMuffleTreble", "10");
@@ -75,6 +104,7 @@ public final class EmtraClientConfig {
 					saved.load(inputStream);
 				}
 				properties.putAll(saved);
+				migrateSwayOptions(properties, saved);
 				// Rewrite when keys are missing or left over from older versions (obsolete settings).
 				missing = !saved.stringPropertyNames().equals(defaults.stringPropertyNames());
 			}
@@ -84,8 +114,14 @@ public final class EmtraClientConfig {
 		RENDER_INSTANCING = bool(properties, "renderInstancing", true);
 		RENDER_RAIL_CACHE = bool(properties, "renderRailCache", true);
 		RENDER_CATENARY_CACHE = bool(properties, "renderCatenaryCache", true);
+		ADVANCED_SWAY = bool(properties, "advancedSway", false);
+		SWAY_HORIZONTAL = integer(properties, "advancedSwayHorizontal", 100, 0, SWAY_MAX_PERCENT);
+		SWAY_VERTICAL = integer(properties, "advancedSwayVertical", 100, 0, SWAY_MAX_PERCENT);
+		SWAY_BRAKE_PITCH = integer(properties, "advancedSwayBrakePitch", 100, 0, SWAY_MAX_PERCENT);
 		RENDER_STATS = bool(properties, "renderStats", false);
 		SOUND_DEBUG = bool(properties, "soundDebug", false);
+		SWAY_DEBUG = bool(properties, "swayDebug", false);
+		SUBDIVIDE_MODELS = bool(properties, "subdivideModels", true);
 		TRAIN_MUFFLE = bool(properties, "trainMuffle", false);
 		TRAIN_MUFFLE_VOLUME = integer(properties, "trainMuffleVolume", 55, 0, 100);
 		TRAIN_MUFFLE_TREBLE = integer(properties, "trainMuffleTreble", 10, 0, 100);
@@ -105,8 +141,14 @@ public final class EmtraClientConfig {
 		properties.setProperty("renderInstancing", String.valueOf(RENDER_INSTANCING));
 		properties.setProperty("renderRailCache", String.valueOf(RENDER_RAIL_CACHE));
 		properties.setProperty("renderCatenaryCache", String.valueOf(RENDER_CATENARY_CACHE));
+		properties.setProperty("advancedSway", String.valueOf(ADVANCED_SWAY));
+		properties.setProperty("advancedSwayHorizontal", String.valueOf(SWAY_HORIZONTAL));
+		properties.setProperty("advancedSwayVertical", String.valueOf(SWAY_VERTICAL));
+		properties.setProperty("advancedSwayBrakePitch", String.valueOf(SWAY_BRAKE_PITCH));
 		properties.setProperty("renderStats", String.valueOf(RENDER_STATS));
 		properties.setProperty("soundDebug", String.valueOf(SOUND_DEBUG));
+		properties.setProperty("swayDebug", String.valueOf(SWAY_DEBUG));
+		properties.setProperty("subdivideModels", String.valueOf(SUBDIVIDE_MODELS));
 		properties.setProperty("trainMuffle", String.valueOf(TRAIN_MUFFLE));
 		properties.setProperty("trainMuffleVolume", String.valueOf(TRAIN_MUFFLE_VOLUME));
 		properties.setProperty("trainMuffleTreble", String.valueOf(TRAIN_MUFFLE_TREBLE));
@@ -120,6 +162,21 @@ public final class EmtraClientConfig {
 			}
 		} catch (Exception e) {
 			System.err.println("[EMTRA] Could not write " + FILE + ": " + e);
+		}
+	}
+
+	private static void migrateSwayOptions(Properties properties, Properties saved) {
+		if (saved.containsKey("advancedSway") || (!saved.containsKey("vehicleSway") && !saved.containsKey("trainStopSettle"))) return;
+
+		boolean sway = bool(saved, "vehicleSway", true);
+		boolean brake = bool(saved, "trainStopSettle", false);
+		if (sway || brake) {
+			properties.setProperty("advancedSway", "true");
+			if (!sway) {
+				properties.setProperty("advancedSwayHorizontal", "0");
+				properties.setProperty("advancedSwayVertical", "0");
+			}
+			if (!brake) properties.setProperty("advancedSwayBrakePitch", "0");
 		}
 	}
 
