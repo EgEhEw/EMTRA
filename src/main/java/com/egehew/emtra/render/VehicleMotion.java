@@ -28,6 +28,8 @@ public final class VehicleMotion {
 	private static final WeakHashMap<PersistentVehicleData, CarPose[]> SAMPLES = new WeakHashMap<>();
 	private static final WeakHashMap<PersistentVehicleData, VehicleSuspensionPhysics.BrakePitch> BRAKES = new WeakHashMap<>();
 	private static final ThreadLocal<Frame> FRAME = new ThreadLocal<>();
+	// Body sway drawn in the last frame, so that scripts (JCM pantographs) see the car where it is drawn.
+	private static final WeakHashMap<PersistentVehicleData, DrawnSway> DRAWN = new WeakHashMap<>();
 
 	private VehicleMotion() {
 	}
@@ -72,7 +74,7 @@ public final class VehicleMotion {
 		if (!sway && pitch == 0 && active == null) {
 			return null;
 		}
-		Frame frame = new Frame(active, cars.size(), pitch, sway);
+		Frame frame = new Frame(active, cars.size(), pitch, sway, vehicle.persistentVehicleData, now);
 		frame.computeSuspension(vehicle, cars, now);
 		FRAME.set(frame);
 		return frame;
@@ -145,6 +147,53 @@ public final class VehicleMotion {
 				? null : new Vector(offsets[start], offsets[start + 1], offsets[start + 2]);
 	}
 
+	/**
+	 * Adds the body sway of the last drawn frame to car poses that JCM rebuilt from the rail for its scripts.
+	 * Sway changes by well under a millimetre per frame, so the one frame delay is not visible.
+	 */
+	public static synchronized void applyDrawnSway(VehicleExtension vehicle, ObjectArrayList<PositionAndRotation> poses) {
+		if (vehicle == null || poses == null) return;
+		DrawnSway drawn = DRAWN.get(vehicle.persistentVehicleData);
+		if (drawn == null) return;
+		long now = System.nanoTime();
+		int count = Math.min(poses.size(), drawn.time.length);
+		for (int car = 0; car < count; car++) {
+			PositionAndRotation pose = poses.get(car);
+			if (pose == null || drawn.time[car] == 0 || now - drawn.time[car] > SAMPLE_LIFETIME_NANOS) continue;
+			poses.set(car, Frame.withPose(pose, pose.position.add(drawn.x[car], drawn.y[car], drawn.z[car]),
+					pose.yaw + drawn.yaw[car], pose.pitch + drawn.pitch[car]));
+		}
+	}
+
+	private static synchronized void recordDrawnSway(PersistentVehicleData vehicleData, int carCount, int car,
+			Vector offset, double yaw, double pitch, long now) {
+		DrawnSway drawn = DRAWN.get(vehicleData);
+		if (drawn == null || drawn.time.length != carCount) {
+			drawn = new DrawnSway(carCount);
+			DRAWN.put(vehicleData, drawn);
+		}
+		drawn.x[car] = offset == null ? 0 : offset.x;
+		drawn.y[car] = offset == null ? 0 : offset.y;
+		drawn.z[car] = offset == null ? 0 : offset.z;
+		drawn.yaw[car] = yaw;
+		drawn.pitch[car] = pitch;
+		drawn.time[car] = now;
+	}
+
+	private static final class DrawnSway {
+		final double[] x, y, z, yaw, pitch;
+		final long[] time;
+
+		DrawnSway(int cars) {
+			x = new double[cars];
+			y = new double[cars];
+			z = new double[cars];
+			yaw = new double[cars];
+			pitch = new double[cars];
+			time = new long[cars];
+		}
+	}
+
 	private record CarPose(Vector body, Vector firstAttachment, Vector secondAttachment,
 						   boolean replaceStockOscillation, long timestamp) {
 	}
@@ -165,11 +214,15 @@ public final class VehicleMotion {
 		private final double[] bodySwayPitch;
 		private final double pitch;
 		private final boolean sway;
+		private final PersistentVehicleData vehicleData;
+		private final long now;
 		public PositionAndRotation wheelPosition;
 		public boolean useWorldOffset;
 
-		private Frame(CarPose[] poses, int carCount, double pitch, boolean sway) {
+		private Frame(CarPose[] poses, int carCount, double pitch, boolean sway, PersistentVehicleData vehicleData, long now) {
 			this.poses = poses;
+			this.vehicleData = vehicleData;
+			this.now = now;
 			bodies = new Vector[carCount];
 			joints = new Vector[carCount][2];
 			jointLinks = new Articulation[carCount][2];
@@ -325,6 +378,7 @@ public final class VehicleMotion {
 			CarPose pose = pose(car);
 			Vector nativeOffset = bodies[car];
 			Vector offset = combine(nativeOffset, pose == null ? null : pose.body);
+			recordDrawnSway(vehicleData, originalBodies.length, car, offset, bodyYaw[car], pitch + bodySwayPitch[car], now);
 			return shift(original, offset, bodyYaw[car], pitch + bodySwayPitch[car]);
 		}
 
@@ -405,7 +459,7 @@ public final class VehicleMotion {
 					original.yaw + yaw, original.pitch + pitch);
 		}
 
-		private static PositionAndRotation withPose(PositionAndRotation original, Vector position, double yaw, double pitch) {
+		static PositionAndRotation withPose(PositionAndRotation original, Vector position, double yaw, double pitch) {
 			PositionAndRotation shifted = new PositionAndRotation(position, yaw, pitch);
 			// Sway can repeatedly cross a block boundary while the underlying rail pose stays level.
 			if ((Object) shifted instanceof VehiclePoseLightAccessor access) access.emtra$setLight(original.light);

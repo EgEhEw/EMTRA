@@ -42,7 +42,12 @@
     "MtrSwayConfigScreenMixin",
     "BogieAttachmentPropertiesMixin",
     "BogieAttachmentResourceMixin",
+    "BogieArticulationSplitMixin",
+    "VehicleModelSchemaAccessor",
+    "VehicleResourceSchemaAccessor",
+    "JsonReaderAccessor",
     "JcmVehicleSuspensionMixin",
+    "JcmVehicleWrapperSwayMixin",
     "JcmClassShutterMixin",
     "RenderLiftsModelCacheMixin"
   ],

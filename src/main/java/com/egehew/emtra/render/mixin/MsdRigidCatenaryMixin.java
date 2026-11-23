@@ -17,13 +17,13 @@ public abstract class MsdRigidCatenaryMixin {
 
 	@Inject(method = RENDER, at = @At("HEAD"), cancellable = true, require = 0, remap = false)
 	private void emtra$cachedCatenary(@Coerce Object callback, CallbackInfo ci) {
-		if (CatenaryCache.beforeRender(this)) {
+		if (CatenaryCache.beforeRender(this, callback)) {
 			ci.cancel();
 		}
 	}
 
 	@Inject(method = RENDER, at = @At("RETURN"), require = 0, remap = false)
 	private void emtra$afterCatenary(@Coerce Object callback, CallbackInfo ci) {
-		CatenaryCache.afterRender();
+		CatenaryCache.afterRender(callback);
 	}
 }

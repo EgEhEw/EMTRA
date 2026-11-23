@@ -139,8 +139,27 @@ public final class CatenaryCache {
 
 	// ---- MSD RigidCatenaryMath.render(callback) ----
 
+	/**
+	 * Only MSD's own rail renderer draws through the cache. Scripts and other mods call the same render method to read
+	 * the segment geometry (JCM pantographs reaching for the wire): cancelling those calls gave them no segments at all.
+	 */
+	private static final ClassValue<Boolean> MSD_RENDERER = new ClassValue<>() {
+		@Override
+		protected Boolean computeValue(Class<?> type) {
+			final String name = type.getName();
+			return name.startsWith("org.mtr.mod.render.RenderRails") || name.startsWith("top.mcmtr.");
+		}
+	};
+
+	private static boolean isMsdRenderer(Object callback) {
+		return callback == null || MSD_RENDERER.get(callback.getClass());
+	}
+
 	/** @return true to cancel MSD's drawing this frame (drawn from the cache instead) */
-	public static boolean beforeRender(Object math) {
+	public static boolean beforeRender(Object math, Object callback) {
+		if (!isMsdRenderer(callback)) {
+			return false;
+		}
 		scheduling = null;
 		segmentKnown = false;
 		if (!EmtraClientConfig.RENDER_CATENARY_CACHE || broken || !RenderSystem.isOnRenderThread() || !OptimizedRenderer.hasOptimizedRendering()) {
@@ -197,8 +216,8 @@ public final class CatenaryCache {
 		return false;
 	}
 
-	public static void afterRender() {
-		if (RenderSystem.isOnRenderThread()) {
+	public static void afterRender(Object callback) {
+		if (isMsdRenderer(callback) && RenderSystem.isOnRenderThread()) {
 			scheduling = null;
 			segmentKnown = false;
 		}
